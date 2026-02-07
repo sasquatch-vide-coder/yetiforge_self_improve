@@ -1,0 +1,41 @@
+{
+  "name": "tiffbot",
+  "version": "1.0.0",
+  "description": "Personal AI assistant via Telegram + Claude Code CLI",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "build:client": "cd status/client && npm run build",
+    "build:all": "tsc && cd status/client && npm run build",
+    "deploy:ui": "cd status/client && npm run build && echo 'UI deployed — no restart needed'",
+    "deploy:bot": "tsc && echo 'Bot built — restart tiffbot service to apply'",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/cors": "^11.2.0",
+    "@types/node-cron": "^3.0.11",
+    "bcrypt": "^6.0.0",
+    "better-sqlite3": "^12.6.2",
+    "dotenv": "^16.4.7",
+    "fastify": "^5.7.4",
+    "grammy": "^1.35.0",
+    "jsonwebtoken": "^9.0.3",
+    "node-cron": "^4.2.1",
+    "otpauth": "^9.5.0",
+    "pino": "^9.6.0",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^22.12.0",
+    "@types/qrcode": "^1.5.6",
+    "pino-pretty": "^13.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

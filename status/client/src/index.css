@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brutal-bg: #f5f0e8;
+  --color-brutal-white: #ffffff;
+  --color-brutal-black: #1a1a1a;
+  --color-brutal-yellow: #ffd43b;
+  --color-brutal-green: #51cf66;
+  --color-brutal-red: #ff6b6b;
+  --color-brutal-blue: #339af0;
+  --color-brutal-purple: #9775fa;
+  --color-brutal-orange: #ff922b;
+  --color-brutal-pink: #f783ac;
+  --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+}
+
+body {
+  background-color: var(--color-brutal-bg);
+  font-family: var(--font-mono);
+  color: var(--color-brutal-black);
+  margin: 0;
+  padding: 0;
+}
+
+.brutal-border {
+  border: 3px solid var(--color-brutal-black);
+}
+
+.brutal-shadow {
+  box-shadow: 4px 4px 0 var(--color-brutal-black);
+}
+
+.brutal-shadow-lg {
+  box-shadow: 6px 6px 0 var(--color-brutal-black);
+}
+
+.overflow-wrap-anywhere {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Hide scrollbar for tab navigation while allowing scroll */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Mobile-specific adjustments */
+@media (max-width: 768px) {
+  html, body {
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100%;
+    position: relative;
+  }
+
+  #root {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  /* Reduced shadows on mobile (2px) instead of removing entirely */
+  .brutal-shadow {
+    box-shadow: 2px 2px 0 var(--color-brutal-black) !important;
+  }
+
+  .brutal-shadow-lg {
+    box-shadow: 3px 3px 0 var(--color-brutal-black) !important;
+  }
+
+  /* Ensure brutal borders don't cause width issues */
+  .brutal-border {
+    box-sizing: border-box;
+  }
+}
+
+/* Skeleton loading animation */
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-brutal-bg) 25%,
+    var(--color-brutal-white) 50%,
+    var(--color-brutal-bg) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}

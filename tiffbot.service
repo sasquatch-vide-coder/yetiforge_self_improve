@@ -1,0 +1,24 @@
+[Unit]
+Description=YetiForge AI Bot Framework
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__WORKDIR__
+ExecStart=__NODE_PATH__ dist/index.js
+Restart=always
+RestartSec=10
+EnvironmentFile=__WORKDIR__/.env
+
+# Security hardening
+NoNewPrivileges=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tiffbot
+
+[Install]
+WantedBy=multi-user.target
