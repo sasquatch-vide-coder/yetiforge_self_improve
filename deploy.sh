@@ -1499,24 +1499,27 @@ run_finalize() {
     echo -e "  ${ARROW}  Uninstall:        ${GREEN}sudo bash ${INSTALL_DIR}/deploy.sh uninstall${NC}"
     echo ""
 
-    echo -e "  ${WHITE}${BOLD}Complete Setup${NC}"
-    echo -e "  ${DIM}${DIVIDER_SUB}${NC}"
-    echo -e "  ${ARROW}  ${WHITE}${BOLD}1.${NC} Set up your PATH for Claude CLI:"
-    echo ""
-    echo -e "     ${GREEN}${BOLD}source ~/.bashrc${NC}"
-    echo ""
-    echo -e "  ${ARROW}  ${WHITE}${BOLD}2.${NC} Authenticate Claude with your Anthropic account:"
-    echo ""
-    echo -e "     ${GREEN}${BOLD}claude auth${NC}"
-    echo ""
-    echo -e "  ${ARROW}  ${WHITE}${BOLD}3.${NC} Restart the service to pick up the auth:"
-    echo ""
-    echo -e "     ${GREEN}${BOLD}sudo systemctl restart yetiforge${NC}"
-    echo ""
-    echo -e "  ${ARROW}  ${WHITE}${BOLD}4.${NC} Set up your admin account at:"
-    echo ""
-    echo -e "     ${GREEN}${BOLD}${dashboard_url}/admin${NC}"
-    echo ""
+    show_box "IMPORTANT: Complete These Steps" \
+        "" \
+        "1. Set up your PATH for Claude CLI:" \
+        "" \
+        "   ${GREEN}${BOLD}source ~/.bashrc${NC}" \
+        "" \
+        "2. Authenticate Claude with your Anthropic account:" \
+        "" \
+        "   ${GREEN}${BOLD}claude auth${NC}" \
+        "" \
+        "3. Restart the service to pick up the auth:" \
+        "" \
+        "   ${GREEN}${BOLD}sudo systemctl restart yetiforge${NC}" \
+        "" \
+        "4. Set up your admin account at:" \
+        "" \
+        "   ${GREEN}${BOLD}${dashboard_url}/admin${NC}"
+    if [[ -n "$internal_url" ]]; then
+        echo -e "  ${ARROW}  LAN Admin:  ${GREEN}${internal_url}/admin${NC}"
+        echo ""
+    fi
 
     if [[ "$HAS_DOMAIN" == "true" && "$SSL_CONFIGURED" != "true" ]]; then
         echo -e "  ${WHITE}${BOLD}🔒 SSL Certificate${NC}"
