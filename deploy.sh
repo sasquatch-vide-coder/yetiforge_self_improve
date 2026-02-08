@@ -866,7 +866,7 @@ install_claude_cli() {
     # Install as the service user, not root, so the binary lands in the right home dir
     local cli_installed=false
     if [[ -n "${SUDO_USER:-}" ]] && [[ "${INSTALL_USER}" != "root" ]]; then
-        if sudo -u "${INSTALL_USER}" bash -c 'curl -fsSL https://claude.ai/install.sh | bash' >> "$INSTALL_LOG" 2>&1; then
+        if sudo -H -u "${INSTALL_USER}" bash -c 'curl -fsSL https://claude.ai/install.sh | bash' >> "$INSTALL_LOG" 2>&1; then
             cli_installed=true
         fi
     else
@@ -899,7 +899,12 @@ GREEN='\033[0;32m'; WHITE='\033[1;37m'; CYAN='\033[0;36m'; NC='\033[0m'
 echo ""
 echo -e "  ${CYAN}Setting up Claude CLI...${NC}"
 echo ""
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+# Set PATH directly (source ~/.bashrc won't work in non-interactive scripts)
+export PATH="$HOME/.local/bin:$PATH"
+# Also persist to bashrc for future interactive sessions
+if ! grep -qF '.local/bin' ~/.bashrc 2>/dev/null; then
+    echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+fi
 if ! command -v claude &> /dev/null; then
     echo -e "  ${WHITE}Claude CLI not found in PATH. Install it first:${NC}"
     echo -e "  ${GREEN}curl -fsSL https://claude.ai/install.sh | bash${NC}"
@@ -1457,7 +1462,7 @@ DONE
         echo ""
         # Run as the service user so auth tokens land in the right home dir
         if [[ -n "${SUDO_USER:-}" ]] && [[ "${INSTALL_USER}" != "root" ]]; then
-            sudo -u "${INSTALL_USER}" bash "${INSTALL_DIR}/setup-claude.sh" </dev/tty || true
+            sudo -H -u "${INSTALL_USER}" bash "${INSTALL_DIR}/setup-claude.sh" </dev/tty || true
         else
             bash "${INSTALL_DIR}/setup-claude.sh" </dev/tty || true
         fi
