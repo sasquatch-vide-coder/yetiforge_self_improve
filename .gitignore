@@ -5,3 +5,7 @@ data/
 *.log
 ssh/
 status/client/dist/
+*.bak
+*.orig
+*.old
+nul

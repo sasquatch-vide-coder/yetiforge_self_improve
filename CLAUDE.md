@@ -106,7 +106,7 @@ Sessions are resumed via `--resume <sessionId>` for conversation continuity.
 - **Client**: React + Vite + Tailwind in `status/client/`
 - **Style**: Neo Brutalist design
 - **Proxy**: Nginx reverse proxy on ports 80/443 with Let's Encrypt SSL
-- **Domain**: `REDACTED_DOMAIN`
+- **Domain**: Configured via environment/nginx
 - **API Endpoints**:
   - `GET /api/status` - Service health, system info, projects
   - `GET /api/invocations` - Historical invocation data (cost, tokens, duration)
@@ -124,15 +124,11 @@ Sessions are resumed via `--resume <sessionId>` for conversation continuity.
 - **Config**: `ADMIN_JWT_SECRET` in `.env`
 
 ## Deployment (VPS)
-- **Host**: `yeti@REDACTED_IP`
-- **SSH**: 
-- **App path**: `~/yetiforge`
 - **Service**: `sudo systemctl {start|stop|restart|status} yetiforge`
 - **Logs**: `sudo journalctl -u yetiforge -f`
-- **Firewall**: iptables rules for ports 80, 443 (Oracle Cloud also needs security list rules)
+- **Firewall**: iptables rules for ports 80, 443
 
 ## GitHub
-- **Repo**: REDACTED_REPO_URL
 - **PAT**: Stored in `.env` as `GITHUB_PAT`
 
 ### Deploy steps
