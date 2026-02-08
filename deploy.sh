@@ -1391,6 +1391,7 @@ DONE
     echo -e "  ${ARROW}  Admin:      ${GREEN}${dashboard_url}/admin${NC}"
     if [[ -n "$internal_url" ]] && [[ "$internal_url" != "$dashboard_url" ]]; then
         echo -e "  ${ARROW}  LAN:        ${GREEN}${internal_url}${NC}"
+        echo -e "  ${ARROW}  LAN Admin:  ${GREEN}${internal_url}/admin${NC}"
     fi
     echo ""
 
