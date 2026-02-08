@@ -6,6 +6,8 @@
  * On approval, the stored plan context is used to launch execution mode.
  */
 
+import { readFileSync, writeFileSync, mkdirSync } from "fs";
+import { join, dirname } from "path";
 import { logger } from "./utils/logger.js";
 
 export interface PendingPlan {
@@ -32,10 +34,33 @@ export interface PendingPlan {
 
 export class PlanStore {
   private plans = new Map<number, PendingPlan>();
+  private filePath: string | null = null;
+
+  constructor(dataDir?: string) {
+    if (dataDir) {
+      this.filePath = join(dataDir, "pending-plans.json");
+    }
+  }
+
+  /** Load pending plans from disk. Call on startup. */
+  load(): void {
+    if (!this.filePath) return;
+    try {
+      const raw = readFileSync(this.filePath, "utf-8");
+      const entries: [number, PendingPlan][] = JSON.parse(raw);
+      this.plans = new Map(entries);
+      if (this.plans.size > 0) {
+        logger.info({ count: this.plans.size }, "Loaded pending plans from disk");
+      }
+    } catch {
+      this.plans = new Map();
+    }
+  }
 
   /** Store a pending plan for a chat. Replaces any existing plan. */
   set(chatId: number, plan: PendingPlan): void {
     this.plans.set(chatId, plan);
+    this.saveToDisk();
     logger.info({ chatId, task: plan.task, revisionCount: plan.revisionCount }, "Pending plan stored");
   }
 
@@ -49,6 +74,7 @@ export class PlanStore {
     const plan = this.plans.get(chatId) || null;
     if (plan) {
       this.plans.delete(chatId);
+      this.saveToDisk();
       logger.info({ chatId, task: plan.task }, "Pending plan consumed");
     }
     return plan;
@@ -62,8 +88,9 @@ export class PlanStore {
   /** Cancel (remove) a pending plan. */
   cancel(chatId: number): boolean {
     const had = this.plans.has(chatId);
-    this.plans.delete(chatId);
     if (had) {
+      this.plans.delete(chatId);
+      this.saveToDisk();
       logger.info({ chatId }, "Pending plan cancelled");
     }
     return had;
@@ -72,5 +99,16 @@ export class PlanStore {
   /** Get all pending plan chat IDs (for debugging/admin). */
   allChatIds(): number[] {
     return Array.from(this.plans.keys());
+  }
+
+  /** Synchronous write — survives process death. */
+  private saveToDisk(): void {
+    if (!this.filePath) return;
+    try {
+      mkdirSync(dirname(this.filePath), { recursive: true });
+      writeFileSync(this.filePath, JSON.stringify(Array.from(this.plans.entries()), null, 2));
+    } catch (err) {
+      logger.error({ err }, "Failed to persist pending plans to disk");
+    }
   }
 }

@@ -19,6 +19,7 @@ import { CronManager } from "./cron-manager.js";
 import { WebhookManager } from "./webhook-manager.js";
 import { ActiveTaskTracker } from "./active-task-tracker.js";
 import { TaskQueue } from "./task-queue.js";
+import { PlanStore } from "./plan-store.js";
 import { setMessageBotApi } from "./handlers/message.js";
 
 async function main() {
@@ -66,6 +67,10 @@ async function main() {
   const taskQueue = new TaskQueue(config.dataDir);
   taskQueue.load();
 
+  // Plan store — pending plans survive restarts
+  const planStore = new PlanStore(config.dataDir);
+  planStore.load();
+
   // Load personality for chat agent
   const personalityMd = await readFile(join(process.cwd(), "docs/personality.md"), "utf-8");
 
@@ -80,7 +85,7 @@ async function main() {
     config, sessionManager, projectManager, invocationLogger,
     chatAgent, executor, agentConfig,
     pendingResponses, memoryManager, cronManager, webhookManager,
-    activeTaskTracker, taskQueue,
+    activeTaskTracker, taskQueue, planStore,
   );
 
   // Set bot API reference for queue-initiated tasks in message handler

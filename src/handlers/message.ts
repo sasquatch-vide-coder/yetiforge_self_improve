@@ -27,8 +27,8 @@ let _executor: Executor | null = null;
 let _invocationLogger: InvocationLogger | null = null;
 let _bot: any = null; // Bot API for sending messages to chats without ctx
 
-/** Singleton plan store — one pending plan per chat */
-const _planStore = new PlanStore();
+/** Plan store — injected from index.ts for disk persistence, fallback to in-memory */
+let _planStore: PlanStore = new PlanStore();
 
 /** Set the bot API reference for queue-initiated tasks that don't have a ctx. */
 export function setMessageBotApi(botApi: any): void {
@@ -52,10 +52,12 @@ export async function handleMessage(
   pendingResponses?: PendingResponseManager,
   memoryManager?: MemoryManager,
   taskQueue?: TaskQueue,
+  planStore?: PlanStore,
 ): Promise<void> {
   if (pendingResponses) _pendingResponses = pendingResponses;
   if (memoryManager) _memoryManager = memoryManager;
   if (taskQueue) _taskQueue = taskQueue;
+  if (planStore) _planStore = planStore;
   if (!_chatLocks) _chatLocks = chatLocks;
   if (!_config) _config = config;
   if (!_chatAgent) _chatAgent = chatAgent;
@@ -149,7 +151,7 @@ export async function handleMessage(
         break;
 
       case "cancel_plan":
-        handleCancelPlan(chatId, ctx);
+        await handleCancelPlan(chatId, ctx);
         break;
 
       default:
@@ -257,8 +259,8 @@ async function handleApprovePlan(
 ): Promise<void> {
   const plan = _planStore.consume(chatId);
   if (!plan) {
-    // No pending plan — nothing to approve
     logger.warn({ chatId }, "approve_plan received but no pending plan exists");
+    await ctx.reply("No pending plan found. It may have been lost during a restart — just re-request the task and I'll re-plan it.").catch(() => {});
     return;
   }
 
@@ -315,6 +317,7 @@ async function handleRevisePlan(
   const plan = _planStore.get(chatId);
   if (!plan) {
     logger.warn({ chatId }, "revise_plan received but no pending plan exists");
+    await ctx.reply("No pending plan found. It may have been lost during a restart — just re-request the task and I'll re-plan it.").catch(() => {});
     return;
   }
 
@@ -359,12 +362,13 @@ async function handleRevisePlan(
 /**
  * Handle plan cancellation: remove the pending plan.
  */
-function handleCancelPlan(chatId: number, ctx: Context): void {
+async function handleCancelPlan(chatId: number, ctx: Context): Promise<void> {
   const cancelled = _planStore.cancel(chatId);
   if (cancelled) {
     logger.info({ chatId }, "Plan cancelled by user");
   } else {
     logger.warn({ chatId }, "cancel_plan received but no pending plan exists");
+    await ctx.reply("No pending plan found to cancel.").catch(() => {});
   }
 }
 
