@@ -100,8 +100,8 @@ docs/                 # Personality spec & documentation
 ### Installation
 
 ```bash
-git clone REDACTED_REPO_URL.git
-cd yetiforge
+git clone https://github.com/sasquatch-vide-coder/yetiforge_self_improve.git
+cd yetiforge_self_improve
 npm install
 cd status/client && npm install && cd ../..
 ```

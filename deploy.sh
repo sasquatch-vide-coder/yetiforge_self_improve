@@ -7,7 +7,7 @@
 #
 #   Usage:
 #     # Fresh install (curl pipe)
-#     curl -fsSL https://raw.githubusercontent.com/sasquatch-vide-coder/yetiforge/main/deploy.sh | sudo bash
+#     curl -fsSL https://raw.githubusercontent.com/sasquatch-vide-coder/yetiforge_self_improve/main/deploy.sh | sudo bash
 #
 #     # Fresh install (from cloned repo)
 #     sudo bash deploy.sh
@@ -39,7 +39,7 @@ SECONDS=0
 # Section 2: Constants & Defaults
 # ══════════════════════════════════════════════════════════════════════════════
 
-REPO_URL="${YETIFORGE_REPO:-REDACTED_REPO_URL.git}"
+REPO_URL="${YETIFORGE_REPO:-https://github.com/sasquatch-vide-coder/yetiforge_self_improve.git}"
 INSTALL_BRANCH="${YETIFORGE_BRANCH:-main}"
 DEFAULT_INSTALL_DIR="/opt/yetiforge"
 DEFAULT_PORT="3069"
