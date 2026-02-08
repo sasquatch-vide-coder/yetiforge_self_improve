@@ -18,7 +18,6 @@ interface ClaudeStatus {
   rateLimitTier: string | null;
   credentialsExist: boolean;
   tokenExpiresAt: number | null;
-  setupCommand: string;
 }
 
 function decodeRateLimitTier(tier: string): string {
@@ -64,7 +63,7 @@ export function AdminClaudePanel({ token }: Props) {
   const [status, setStatus] = useState<ClaudeStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [showSetup, setShowSetup] = useState(false);
+
 
   const [checking, setChecking] = useState(false);
   const [updating, setUpdating] = useState(false);
@@ -179,20 +178,14 @@ export function AdminClaudePanel({ token }: Props) {
             </div>
           )}
 
-          {/* Updates + Auth: compact row of buttons */}
-          <div className="border-t-2 border-brutal-black/20 pt-2 mt-1 flex gap-2">
+          {/* Updates */}
+          <div className="border-t-2 border-brutal-black/20 pt-2 mt-1">
             <button
               onClick={handleCheckUpdate}
               disabled={checking || updating}
-              className="flex-1 bg-brutal-blue text-brutal-white font-bold uppercase py-1.5 brutal-border hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none brutal-shadow transition-all disabled:opacity-50 text-[10px]"
+              className="w-full bg-brutal-blue text-brutal-white font-bold uppercase py-1.5 brutal-border hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none brutal-shadow transition-all disabled:opacity-50 text-[10px]"
             >
               {checking ? "Checking..." : "Check Updates"}
-            </button>
-            <button
-              onClick={() => setShowSetup(!showSetup)}
-              className="flex-1 bg-brutal-yellow text-brutal-black font-bold uppercase py-1.5 brutal-border hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none brutal-shadow transition-all text-[10px]"
-            >
-              {showSetup ? "Hide" : status.authenticated ? "Re-Auth" : "Setup Auth"}
             </button>
           </div>
 
@@ -225,32 +218,6 @@ export function AdminClaudePanel({ token }: Props) {
             </pre>
           )}
 
-          {/* Auth setup (expandable) */}
-          {showSetup && (
-            <div className="bg-brutal-bg brutal-border p-3 space-y-2 text-[10px]">
-              <p className="font-bold uppercase">
-                {status.authenticated ? "To re-authenticate:" : "To authenticate Claude Code:"}
-              </p>
-              <div className="space-y-1">
-                <p>1. SSH into your server:</p>
-                <pre className="bg-brutal-black text-brutal-green p-1.5 brutal-border overflow-x-auto">
-                  ssh ubuntu@your-server-ip
-                </pre>
-                <p>2. Run auth command:</p>
-                <pre className="bg-brutal-black text-brutal-green p-1.5 brutal-border overflow-x-auto">
-                  {status.setupCommand}
-                </pre>
-                <p>3. Sign in via browser.</p>
-                <p>4. Restart service:</p>
-                <pre className="bg-brutal-black text-brutal-green p-1.5 brutal-border overflow-x-auto">
-                  sudo systemctl restart yetiforge
-                </pre>
-                <p className="text-brutal-black/60 italic">
-                  Requires browser access via SSH.
-                </p>
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>

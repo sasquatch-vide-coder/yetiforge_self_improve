@@ -77,7 +77,6 @@ export function getClaudeStatus(token: string) {
     rateLimitTier: string | null;
     credentialsExist: boolean;
     tokenExpiresAt: number | null;
-    setupCommand: string;
   }>("/claude/status", { token });
 }
 

@@ -281,7 +281,6 @@ export async function registerAdminRoutes(
         rateLimitTier: string | null;
         credentialsExist: boolean;
         tokenExpiresAt: number | null;
-        setupCommand: string;
       } = {
         installed: false,
         version: null,
@@ -291,7 +290,6 @@ export async function registerAdminRoutes(
         rateLimitTier: null,
         credentialsExist: false,
         tokenExpiresAt: null,
-        setupCommand: "claude setup-token",
       };
 
       // Check if credentials file exists and read subscription info
