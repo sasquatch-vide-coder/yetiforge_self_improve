@@ -1499,27 +1499,28 @@ run_finalize() {
     echo -e "  ${ARROW}  Uninstall:        ${GREEN}sudo bash ${INSTALL_DIR}/deploy.sh uninstall${NC}"
     echo ""
 
-    show_box "IMPORTANT: Complete These Steps" \
-        "" \
-        "1. Set up your PATH for Claude CLI:" \
-        "" \
-        "   ${GREEN}${BOLD}source ~/.bashrc${NC}" \
-        "" \
-        "2. Authenticate Claude with your Anthropic account:" \
-        "" \
-        "   ${GREEN}${BOLD}claude auth${NC}" \
-        "" \
-        "3. Restart the service to pick up the auth:" \
-        "" \
-        "   ${GREEN}${BOLD}sudo systemctl restart yetiforge${NC}" \
-        "" \
-        "4. Set up your admin account at:" \
-        "" \
-        "   ${GREEN}${BOLD}${dashboard_url}/admin${NC}"
+    local -a box_lines=(
+        ""
+        "1. Set up your PATH for Claude CLI:"
+        ""
+        "   ${GREEN}${BOLD}source ~/.bashrc${NC}"
+        ""
+        "2. Authenticate Claude with your Anthropic account:"
+        ""
+        "   ${GREEN}${BOLD}claude auth${NC}"
+        ""
+        "3. Restart the service to pick up the auth:"
+        ""
+        "   ${GREEN}${BOLD}sudo systemctl restart yetiforge${NC}"
+        ""
+        "4. Set up your admin account at:"
+        ""
+        "   Remote: ${GREEN}${BOLD}${dashboard_url}/admin${NC}"
+    )
     if [[ -n "$internal_url" ]]; then
-        echo -e "  ${ARROW}  LAN Admin:  ${GREEN}${internal_url}/admin${NC}"
-        echo ""
+        box_lines+=("   LAN:    ${GREEN}${BOLD}${internal_url}/admin${NC}")
     fi
+    show_box "IMPORTANT: Complete These Steps" "${box_lines[@]}"
 
     if [[ "$HAS_DOMAIN" == "true" && "$SSL_CONFIGURED" != "true" ]]; then
         echo -e "  ${WHITE}${BOLD}🔒 SSL Certificate${NC}"
