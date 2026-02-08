@@ -67,6 +67,7 @@ export class ChatAgent {
       systemPrompt: this.systemPrompt,
       model: tierConfig.model,
       timeoutMsOverride: tierConfig.timeoutMs,
+      allowedTools: "",
     });
 
     // Save session and check for rotation
