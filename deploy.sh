@@ -267,6 +267,7 @@ prompt_secret() {
     local prompt_text="$1"
     local var_name="$2"
     local required="${3:-true}"
+    local hidden="${4:-true}"
 
     # In auto mode, the value should already be set via env var
     if [[ "$AUTO_MODE" == "true" ]]; then
@@ -275,8 +276,12 @@ prompt_secret() {
 
     while true; do
         echo -en "  ${ARROW}  ${prompt_text}: "
-        read -rs input
-        echo ""
+        if [[ "$hidden" == "true" ]]; then
+            read -rs input
+            echo ""
+        else
+            read -r input
+        fi
 
         if [[ "$required" == "true" && -z "$input" ]]; then
             log_error "This field is required. Please enter a value."
@@ -710,7 +715,7 @@ run_configuration() {
         echo ""
 
         while true; do
-            prompt_secret "* Telegram Bot Token" CFG_BOT_TOKEN true
+            prompt_secret "* Telegram Bot Token" CFG_BOT_TOKEN true false
             if [[ "$CFG_BOT_TOKEN" =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]]; then
                 log_success "Bot token format looks valid"
                 break
