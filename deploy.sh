@@ -889,54 +889,6 @@ install_claude_cli() {
         else
             log_success "Claude CLI installed"
         fi
-
-        # Generate helper script that walks the user through auth + restart
-        # Use unquoted heredoc so ${INSTALL_USER} expands to the actual username
-        local setup_script="${INSTALL_DIR}/setup-claude.sh"
-        cat > "$setup_script" << SETUPEOF
-#!/usr/bin/env bash
-GREEN='\033[0;32m'; WHITE='\033[1;37m'; CYAN='\033[0;36m'; NC='\033[0m'
-CLAUDE_BIN="/home/${INSTALL_USER}/.local/bin/claude"
-echo ""
-echo -e "  \${CYAN}Setting up Claude CLI...\${NC}"
-echo ""
-# Check known install locations
-if [[ ! -f "\$CLAUDE_BIN" ]]; then
-    # Try other common locations
-    for loc in /usr/local/bin/claude "\$HOME/.local/bin/claude" "\$HOME/.npm-global/bin/claude"; do
-        if [[ -f "\$loc" ]]; then
-            CLAUDE_BIN="\$loc"
-            break
-        fi
-    done
-fi
-if [[ ! -f "\$CLAUDE_BIN" ]]; then
-    echo -e "  \${WHITE}Claude CLI not found. Install it first:\${NC}"
-    echo -e "  \${GREEN}curl -fsSL https://claude.ai/install.sh | bash\${NC}"
-    exit 1
-fi
-# Persist to bashrc for future interactive sessions
-if ! grep -qF '.local/bin' "\$HOME/.bashrc" 2>/dev/null; then
-    echo 'export PATH="\$HOME/.local/bin:\$PATH"' >> "\$HOME/.bashrc"
-fi
-echo -e "  \${GREEN}✓\${NC}  Claude CLI found at \$CLAUDE_BIN"
-echo ""
-echo -e "  \${CYAN}Opening Claude authentication...\${NC}"
-echo ""
-"\$CLAUDE_BIN" auth
-echo ""
-echo -e "  \${GREEN}✓\${NC}  Authentication complete!"
-echo ""
-echo -e "  \${CYAN}Restarting YetiForge service...\${NC}"
-sudo systemctl restart yetiforge
-echo -e "  \${GREEN}✓\${NC}  Service restarted — YetiForge is ready!"
-echo ""
-SETUPEOF
-        chmod +x "$setup_script"
-        if [[ -n "${SUDO_USER:-}" ]] && [[ "${INSTALL_USER}" != "root" ]]; then
-            chown "${INSTALL_USER}:${INSTALL_USER}" "$setup_script"
-        fi
-        log_success "Setup helper created at ${setup_script}"
     else
         log_warn "Claude CLI installation failed (non-fatal)"
         log_info "Install manually later with: curl -fsSL https://claude.ai/install.sh | bash"
@@ -1461,35 +1413,23 @@ DONE
     echo -e "  ${ARROW}  Uninstall:        ${GREEN}sudo bash ${INSTALL_DIR}/deploy.sh uninstall${NC}"
     echo ""
 
-    # Claude CLI — auto-run setup or show manual steps
-    local claude_bin="/home/${INSTALL_USER}/.local/bin/claude"
-    if [[ -f "${INSTALL_DIR}/setup-claude.sh" ]]; then
-        echo -e "  ${WHITE}${BOLD}Claude CLI Setup${NC}"
-        echo -e "  ${DIM}────────────────────────────────────────────────────${NC}"
-        echo -e "  ${ARROW}  Launching Claude authentication..."
-        echo -e "  ${DIM}  (You can re-run later with: bash ${INSTALL_DIR}/setup-claude.sh)${NC}"
-        echo ""
-        # Run as the service user so auth tokens land in the right home dir
-        if [[ -n "${SUDO_USER:-}" ]] && [[ "${INSTALL_USER}" != "root" ]]; then
-            sudo -H -u "${INSTALL_USER}" bash "${INSTALL_DIR}/setup-claude.sh" </dev/tty || true
-        else
-            bash "${INSTALL_DIR}/setup-claude.sh" </dev/tty || true
-        fi
-    elif ! command -v claude &> /dev/null && [[ ! -f "$claude_bin" ]]; then
-        echo -e "  ${WHITE}${BOLD}Next Steps — Claude CLI Setup${NC}"
-        echo -e "  ${DIM}────────────────────────────────────────────────────${NC}"
-        echo -e "  ${WARN}  Claude CLI not found — install it to enable AI features:"
-        echo ""
-        echo -e "  ${WHITE}${BOLD}  1.${NC} Install the Claude CLI:"
-        echo -e "     ${GREEN}curl -fsSL https://claude.ai/install.sh | bash${NC}"
-        echo ""
-        echo -e "  ${WHITE}${BOLD}  2.${NC} Authenticate with your Anthropic account:"
-        echo -e "     ${GREEN}export PATH=\"\$HOME/.local/bin:\$PATH\" && claude auth${NC}"
-        echo ""
-        echo -e "  ${WHITE}${BOLD}  3.${NC} Restart the service:"
-        echo -e "     ${GREEN}sudo systemctl restart yetiforge${NC}"
-        echo ""
-    fi
+    # Claude CLI — show clear post-install steps
+    echo -e "  ${YELLOW}${BOLD}╔══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "  ${YELLOW}${BOLD}║          IMPORTANT: Complete These 3 Steps              ║${NC}"
+    echo -e "  ${YELLOW}${BOLD}╚══════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "  ${WHITE}${BOLD}  Step 1.${NC} Set up your PATH for Claude CLI:"
+    echo ""
+    echo -e "     ${GREEN}${BOLD}echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.bashrc && source ~/.bashrc${NC}"
+    echo ""
+    echo -e "  ${WHITE}${BOLD}  Step 2.${NC} Authenticate Claude with your Anthropic account:"
+    echo ""
+    echo -e "     ${GREEN}${BOLD}claude auth${NC}"
+    echo ""
+    echo -e "  ${WHITE}${BOLD}  Step 3.${NC} Restart the service to pick up the auth:"
+    echo ""
+    echo -e "     ${GREEN}${BOLD}sudo systemctl restart yetiforge${NC}"
+    echo ""
 
     if [[ "$HAS_DOMAIN" == "true" && "$SSL_CONFIGURED" != "true" ]]; then
         echo -e "  ${WHITE}${BOLD}🔒 SSL Certificate${NC}"
