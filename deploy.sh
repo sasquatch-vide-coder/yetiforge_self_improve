@@ -876,15 +876,25 @@ install_claude_cli() {
     fi
 
     if [[ "$cli_installed" == "true" ]]; then
-        # Add install location to PATH for current session
+        # Add install location to PATH for current script session
         export PATH="/home/${INSTALL_USER}/.local/bin:$PATH"
+
+        # Ensure PATH persists for the user's future shell sessions
+        local user_bashrc="/home/${INSTALL_USER}/.bashrc"
+        local path_line='export PATH="$HOME/.local/bin:$PATH"'
+        if [[ -f "$user_bashrc" ]] && ! grep -qF '.local/bin' "$user_bashrc" 2>/dev/null; then
+            echo "" >> "$user_bashrc"
+            echo "# Added by YetiForge installer — Claude CLI" >> "$user_bashrc"
+            echo "$path_line" >> "$user_bashrc"
+            log_success "Added ~/.local/bin to PATH in .bashrc"
+        fi
+
         if command -v claude &> /dev/null; then
             log_success "Claude CLI installed ($(claude --version 2>/dev/null || echo 'version unknown'))"
-            log_info "Run 'claude auth' after install to authenticate"
         else
             log_success "Claude CLI installed"
-            log_info "Run 'claude auth' after install to authenticate"
         fi
+        log_info "Run 'claude auth' after install to authenticate"
     else
         log_warn "Claude CLI installation failed (non-fatal)"
         log_info "Install manually later with: curl -fsSL https://claude.ai/install.sh | bash"
@@ -1399,11 +1409,12 @@ DONE
     echo ""
 
     # Claude CLI status
-    if command -v claude &> /dev/null; then
+    local claude_bin="/home/${INSTALL_USER}/.local/bin/claude"
+    if command -v claude &> /dev/null || [[ -f "$claude_bin" ]]; then
         echo -e "  ${WHITE}${BOLD}Claude Code CLI${NC}"
         echo -e "  ${DIM}────────────────────────────────────────────────────${NC}"
         echo -e "  ${CHECK}  Claude CLI is installed"
-        echo -e "  ${ARROW}  Authenticate: ${WHITE}claude auth${NC}"
+        echo -e "  ${ARROW}  Authenticate: ${WHITE}${claude_bin} auth${NC}"
         echo -e "  ${ARROW}  Then restart:  ${WHITE}sudo systemctl restart yetiforge${NC}"
         echo ""
     elif [[ "${CFG_CLAUDE_PATH:-claude}" == "claude" ]]; then
