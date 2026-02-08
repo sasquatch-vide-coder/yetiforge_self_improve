@@ -138,7 +138,7 @@ DIVIDER_SUB=$(printf '%.0s─' $(seq 1 52))
 
 # Step counter
 CURRENT_STEP=0
-TOTAL_STEPS=9
+TOTAL_STEPS=8
 
 show_banner() {
     clear 2>/dev/null || true
@@ -1499,23 +1499,24 @@ run_finalize() {
     echo -e "  ${ARROW}  Uninstall:        ${GREEN}sudo bash ${INSTALL_DIR}/deploy.sh uninstall${NC}"
     echo ""
 
-    # Claude CLI — show post-install steps only if auth was skipped
-    if [[ "$CLAUDE_AUTH_OK" != "true" ]]; then
-        echo -e "  ${WHITE}${BOLD}Claude CLI Setup${NC}"
-        echo -e "  ${DIM}${DIVIDER_SUB}${NC}"
-        echo -e "  ${ARROW}  Authenticate Claude with your Anthropic account:"
-        echo ""
-        echo -e "     ${GREEN}${BOLD}claude auth${NC}"
-        echo ""
-        echo -e "  ${ARROW}  Then restart the service:"
-        echo ""
-        echo -e "     ${GREEN}${BOLD}sudo systemctl restart yetiforge${NC}"
-        echo ""
-        echo -e "  ${ARROW}  Set up your admin account at:"
-        echo ""
-        echo -e "     ${GREEN}${BOLD}${dashboard_url}/admin${NC}"
-        echo ""
-    fi
+    echo -e "  ${WHITE}${BOLD}Complete Setup${NC}"
+    echo -e "  ${DIM}${DIVIDER_SUB}${NC}"
+    echo -e "  ${ARROW}  ${WHITE}${BOLD}1.${NC} Set up your PATH for Claude CLI:"
+    echo ""
+    echo -e "     ${GREEN}${BOLD}source ~/.bashrc${NC}"
+    echo ""
+    echo -e "  ${ARROW}  ${WHITE}${BOLD}2.${NC} Authenticate Claude with your Anthropic account:"
+    echo ""
+    echo -e "     ${GREEN}${BOLD}claude auth${NC}"
+    echo ""
+    echo -e "  ${ARROW}  ${WHITE}${BOLD}3.${NC} Restart the service to pick up the auth:"
+    echo ""
+    echo -e "     ${GREEN}${BOLD}sudo systemctl restart yetiforge${NC}"
+    echo ""
+    echo -e "  ${ARROW}  ${WHITE}${BOLD}4.${NC} Set up your admin account at:"
+    echo ""
+    echo -e "     ${GREEN}${BOLD}${dashboard_url}/admin${NC}"
+    echo ""
 
     if [[ "$HAS_DOMAIN" == "true" && "$SSL_CONFIGURED" != "true" ]]; then
         echo -e "  ${WHITE}${BOLD}🔒 SSL Certificate${NC}"
@@ -1947,8 +1948,7 @@ main() {
             run_build               # Step 5: npm install + build
             setup_services          # Step 6: systemd + nginx
             setup_ssl               # Step 7: Optional SSL
-            authenticate_claude     # Step 8: Claude CLI auth
-            run_finalize            # Step 9: Health check + summary
+            run_finalize            # Step 8: Health check + summary
 
             # Cleanup temp files
             rm -f /tmp/yetiforge.service /tmp/yetiforge-nginx.conf
