@@ -742,43 +742,18 @@ run_configuration() {
 
         echo ""
 
-        # ── Server Configuration ──
-        echo -e "  ${BOLD}${MAGENTA}Server Configuration${NC}"
-        echo ""
+        # ── Apply sensible defaults silently ──
+        CFG_DOMAIN=""
+        HAS_DOMAIN=false
+        log_info "No domain configured — using IP-only access"
 
-        echo -e "  ${DIM}If you have a domain pointed to this server, enter it now.${NC}"
-        echo -e "  ${DIM}Leave blank to use IP address only (http://your-server-ip:3069)${NC}"
-        prompt_with_default "Domain name (optional)" "" CFG_DOMAIN false
+        CFG_PORT="$DEFAULT_PORT"
+        log_success "Status port: ${CFG_PORT}"
 
-        if [[ -n "$CFG_DOMAIN" ]]; then
-            CFG_DOMAIN=$(echo "$CFG_DOMAIN" | sed 's|https\?://||' | sed 's|/.*||')
-            log_success "Domain: ${CFG_DOMAIN}"
-            HAS_DOMAIN=true
-        else
-            HAS_DOMAIN=false
-            log_info "No domain — will use IP-only access"
-        fi
-
-        echo ""
-
-        prompt_with_default "Status dashboard port" "$DEFAULT_PORT" CFG_PORT false
-        log_success "Port: ${CFG_PORT}"
-
-        echo ""
-
-        # ── Project Configuration ──
-        echo -e "  ${BOLD}${MAGENTA}Project Configuration${NC}"
-        echo ""
-
-        prompt_with_default "Default project directory" "/home/${INSTALL_USER}" CFG_PROJECT_DIR false
+        CFG_PROJECT_DIR="/home/${INSTALL_USER}"
         log_success "Project dir: ${CFG_PROJECT_DIR}"
 
-        echo ""
-
-        # ── Claude CLI ──
-        echo -e "  ${BOLD}${MAGENTA}Claude Code CLI${NC}"
-        echo ""
-
+        # Detect Claude CLI path
         local detected_claude=""
         if command -v claude &> /dev/null; then
             detected_claude=$(which claude)
@@ -787,51 +762,24 @@ run_configuration() {
         elif [[ -f "/usr/local/bin/claude" ]]; then
             detected_claude="/usr/local/bin/claude"
         fi
-
+        CFG_CLAUDE_PATH="${detected_claude:-claude}"
         if [[ -n "$detected_claude" ]]; then
-            log_success "Claude CLI detected at: ${detected_claude}"
-            prompt_with_default "Claude CLI path" "$detected_claude" CFG_CLAUDE_PATH false
+            log_success "Claude CLI: ${detected_claude}"
         else
-            log_warn "Claude CLI not found on this system"
-            echo -e "  ${DIM}YetiForge needs the Claude Code CLI for AI-powered task execution.${NC}"
-            echo -e "  ${DIM}You can install it during this setup or later manually.${NC}"
-            prompt_with_default "Claude CLI path (or press Enter to skip)" "claude" CFG_CLAUDE_PATH false
+            log_info "Claude CLI: will be installed"
         fi
 
-        echo ""
+        # Auto-generate JWT secret
+        CFG_JWT_SECRET=$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | base64 | tr -d '=/+' | head -c 64)
+        log_success "JWT secret: auto-generated"
 
-        # ── Security ──
-        echo -e "  ${BOLD}${MAGENTA}Security${NC}"
-        echo ""
+        # Skip GitHub integration by default
+        CFG_GITHUB_PAT=""
 
-        local auto_secret
-        auto_secret=$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | base64 | tr -d '=/+' | head -c 64)
+        # Use default timeout
+        CFG_CLAUDE_TIMEOUT="$DEFAULT_TIMEOUT"
 
-        echo -e "  ${DIM}JWT secret is used to sign admin dashboard tokens.${NC}"
-        echo -e "  ${DIM}Press Enter to auto-generate a secure random secret.${NC}"
-        prompt_with_default "Admin JWT Secret" "$auto_secret" CFG_JWT_SECRET false
-        log_success "JWT secret configured"
-
-        echo ""
-
-        # ── Optional: GitHub PAT ──
-        echo -e "  ${BOLD}${MAGENTA}Optional Integrations${NC}"
-        echo ""
-
-        prompt_yn "Configure GitHub integration?" "n" SETUP_GITHUB
-        if [[ "$SETUP_GITHUB" == "true" ]]; then
-            echo -e "  ${DIM}GitHub PAT enables repo management features.${NC}"
-            echo -e "  ${DIM}Generate one at: https://github.com/settings/tokens${NC}"
-            prompt_secret "GitHub Personal Access Token" CFG_GITHUB_PAT false
-        else
-            CFG_GITHUB_PAT=""
-        fi
-
-        echo ""
-
-        # ── Claude timeout ──
-        prompt_with_default "Claude CLI timeout (ms)" "$DEFAULT_TIMEOUT" CFG_CLAUDE_TIMEOUT false
-
+        log_info "Customize later by editing ${INSTALL_DIR}/.env"
         echo ""
     fi
 
@@ -907,18 +855,7 @@ install_claude_cli() {
     done
 
     echo ""
-    log_warn "Claude CLI not found on this system"
-    echo -e "  ${DIM}The Claude Code CLI enables AI-powered task execution.${NC}"
-    echo -e "  ${DIM}The bot will work without it, but AI features require it.${NC}"
-    echo ""
-
-    prompt_yn "Install Claude Code CLI now?" "y" INSTALL_CLAUDE
-
-    if [[ "$INSTALL_CLAUDE" != "true" ]]; then
-        log_info "Skipping Claude CLI installation"
-        log_info "Install later with: curl -fsSL https://claude.ai/install.sh | bash"
-        return 0
-    fi
+    log_info "Claude CLI not found — installing automatically..."
 
     if [[ "$DRY_RUN" == "true" ]]; then
         log_info "[DRY RUN] Would install Claude Code CLI"
@@ -927,8 +864,15 @@ install_claude_cli() {
 
     log_step "Installing Claude Code CLI..."
     if curl -fsSL https://claude.ai/install.sh | bash >> "$INSTALL_LOG" 2>&1; then
-        log_success "Claude CLI installed"
-        log_warn "You must authenticate after install: claude auth"
+        # Add install location to PATH for current session
+        export PATH="/home/${INSTALL_USER}/.local/bin:$PATH"
+        if command -v claude &> /dev/null; then
+            log_success "Claude CLI installed ($(claude --version 2>/dev/null || echo 'version unknown'))"
+            log_info "Run 'claude auth' after install to authenticate"
+        else
+            log_success "Claude CLI installed"
+            log_info "Run 'claude auth' after install to authenticate"
+        fi
     else
         log_warn "Claude CLI installation failed (non-fatal)"
         log_info "Install manually later with: curl -fsSL https://claude.ai/install.sh | bash"
@@ -1202,11 +1146,8 @@ NGINXCONF
 
     # Remove default site if it exists
     if [[ -f /etc/nginx/sites-enabled/default ]]; then
-        prompt_yn "Remove default Nginx site?" "y" REMOVE_DEFAULT
-        if [[ "$REMOVE_DEFAULT" == "true" ]]; then
-            $SUDO_CMD rm -f /etc/nginx/sites-enabled/default
-            log_success "Default Nginx site removed"
-        fi
+        $SUDO_CMD rm -f /etc/nginx/sites-enabled/default
+        log_success "Default Nginx site removed"
     fi
 
     # Test nginx config
@@ -1227,23 +1168,16 @@ NGINXCONF
     # ── Firewall ──
     if [[ "$UFW_AVAILABLE" == "true" ]]; then
         log_step "Configuring firewall rules..."
-        prompt_yn "Configure UFW firewall rules? (opens ports 80, 443, ${CFG_PORT:-$DEFAULT_PORT})" "y" SETUP_UFW
+        $SUDO_CMD ufw allow 80/tcp >> "$INSTALL_LOG" 2>&1
+        $SUDO_CMD ufw allow 443/tcp >> "$INSTALL_LOG" 2>&1
+        $SUDO_CMD ufw allow "${CFG_PORT:-$DEFAULT_PORT}/tcp" >> "$INSTALL_LOG" 2>&1
+        $SUDO_CMD ufw allow 22/tcp >> "$INSTALL_LOG" 2>&1
 
-        if [[ "$SETUP_UFW" == "true" ]]; then
-            $SUDO_CMD ufw allow 80/tcp >> "$INSTALL_LOG" 2>&1
-            $SUDO_CMD ufw allow 443/tcp >> "$INSTALL_LOG" 2>&1
-            $SUDO_CMD ufw allow "${CFG_PORT:-$DEFAULT_PORT}/tcp" >> "$INSTALL_LOG" 2>&1
-            $SUDO_CMD ufw allow 22/tcp >> "$INSTALL_LOG" 2>&1
-
-            if ! $SUDO_CMD ufw status | grep -q "Status: active"; then
-                prompt_yn "Enable UFW firewall?" "y" ENABLE_UFW
-                if [[ "$ENABLE_UFW" == "true" ]]; then
-                    echo "y" | $SUDO_CMD ufw enable >> "$INSTALL_LOG" 2>&1
-                    log_success "Firewall enabled"
-                fi
-            fi
-            log_success "Firewall rules configured"
+        if ! $SUDO_CMD ufw status | grep -q "Status: active"; then
+            echo "y" | $SUDO_CMD ufw enable >> "$INSTALL_LOG" 2>&1
+            log_success "Firewall enabled"
         fi
+        log_success "Firewall rules configured"
     else
         log_info "No UFW — ensure ports 80, 443, ${CFG_PORT:-$DEFAULT_PORT} are open"
     fi
@@ -1452,8 +1386,15 @@ DONE
     echo -e "  ${ARROW}  Uninstall:        ${WHITE}sudo bash ${INSTALL_DIR}/deploy.sh uninstall${NC}"
     echo ""
 
-    # Claude CLI warning if not found
-    if ! command -v claude &> /dev/null && [[ "${CFG_CLAUDE_PATH:-claude}" == "claude" ]]; then
+    # Claude CLI status
+    if command -v claude &> /dev/null; then
+        echo -e "  ${WHITE}${BOLD}Claude Code CLI${NC}"
+        echo -e "  ${DIM}────────────────────────────────────────────────────${NC}"
+        echo -e "  ${CHECK}  Claude CLI is installed"
+        echo -e "  ${ARROW}  Authenticate: ${WHITE}claude auth${NC}"
+        echo -e "  ${ARROW}  Then restart:  ${WHITE}sudo systemctl restart yetiforge${NC}"
+        echo ""
+    elif [[ "${CFG_CLAUDE_PATH:-claude}" == "claude" ]]; then
         echo -e "  ${WHITE}${BOLD}⚠ Claude Code CLI${NC}"
         echo -e "  ${DIM}────────────────────────────────────────────────────${NC}"
         echo -e "  ${WARN}  Claude CLI not found — bot chat will work, but"
