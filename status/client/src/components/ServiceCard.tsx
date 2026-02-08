@@ -6,7 +6,7 @@ interface ServiceStatus {
 }
 
 interface Props {
-  tiffbot: ServiceStatus;
+  yetiforge: ServiceStatus;
   nginx: ServiceStatus;
 }
 
@@ -51,7 +51,7 @@ function ServiceEntry({
   );
 }
 
-export function ServiceCard({ tiffbot, nginx }: Props) {
+export function ServiceCard({ yetiforge, nginx }: Props) {
   return (
     <div className="bg-brutal-white brutal-border brutal-shadow p-6">
       <h2 className="text-sm uppercase tracking-widest mb-4 font-bold">
@@ -59,9 +59,9 @@ export function ServiceCard({ tiffbot, nginx }: Props) {
       </h2>
       <div className="space-y-4">
         <ServiceEntry
-          label="tiffbot"
+          label="yetiforge"
           description="Bot / API"
-          service={tiffbot}
+          service={yetiforge}
         />
         <hr className="border-brutal-black/20" />
         <ServiceEntry

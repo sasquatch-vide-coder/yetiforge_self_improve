@@ -5,7 +5,7 @@ import { useBotName } from "../context/BotConfigContext";
 
 export function AdminLogin() {
   const navigate = useNavigate();
-  const { isAuthenticated, loading, loginAdmin, verifyMfaCode } =
+  const { isAuthenticated, loading, loginAdmin, verifyMfaCode, isSetUp, setupAdmin } =
     useAdminAuth();
   const { botName } = useBotName();
 
@@ -13,6 +13,7 @@ export function AdminLogin() {
   const [password, setPassword] = useState("");
   const [mfaCode, setMfaCode] = useState("");
   const [partialToken, setPartialToken] = useState<string | null>(null);
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -53,6 +54,27 @@ export function AdminLogin() {
     }
   };
 
+  const handleSetup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (password !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await setupAdmin(username, password);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Setup failed");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-brutal-bg flex items-center justify-center">
@@ -72,7 +94,7 @@ export function AdminLogin() {
             {botName}
           </h1>
           <p className="text-sm mt-1 text-brutal-black/60 uppercase tracking-wide">
-            Admin Login
+            {isSetUp === false ? "First-Time Setup" : "Admin Login"}
           </p>
         </div>
 
@@ -84,8 +106,64 @@ export function AdminLogin() {
             </div>
           )}
 
-          {/* MFA Step */}
-          {partialToken ? (
+          {/* Setup Form — shown when no admin account exists */}
+          {isSetUp === false ? (
+            <form onSubmit={handleSetup}>
+              <h2 className="text-lg font-bold uppercase mb-4">
+                Create Admin Account
+              </h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block font-mono text-xs uppercase font-bold mb-1">
+                    Username
+                  </label>
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    required
+                    autoFocus
+                    className="w-full brutal-border p-3 font-mono bg-brutal-bg"
+                  />
+                </div>
+                <div>
+                  <label className="block font-mono text-xs uppercase font-bold mb-1">
+                    Password
+                  </label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    className="w-full brutal-border p-3 font-mono bg-brutal-bg"
+                  />
+                  <p className="font-mono text-xs text-brutal-black/50 mt-1">
+                    Must be at least 8 characters
+                  </p>
+                </div>
+                <div>
+                  <label className="block font-mono text-xs uppercase font-bold mb-1">
+                    Confirm Password
+                  </label>
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                    className="w-full brutal-border p-3 font-mono bg-brutal-bg"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full bg-brutal-yellow text-brutal-black font-bold uppercase py-3 brutal-border hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none brutal-shadow transition-all disabled:opacity-50"
+                >
+                  {submitting ? "Creating Account..." : "Create Account"}
+                </button>
+              </div>
+            </form>
+          ) : /* MFA Step */
+          partialToken ? (
             <form onSubmit={handleMfa}>
               <h2 className="text-lg font-bold uppercase mb-4">
                 Enter MFA Code

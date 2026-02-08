@@ -69,9 +69,21 @@ export async function registerAdminRoutes(
   const auditLogger = new AuditLogger(join(process.env.DATA_DIR || "data"));
   const rateLimiter = new LoginRateLimiter();
 
-  // ── Setup endpoint disabled — admin account is created server-side ──
-  app.post("/api/admin/setup", async (_request, reply) => {
-    reply.code(403).send({ error: "Setup is disabled. Admin account must be created server-side." });
+  // ── First-time setup — create admin account (only works when no admin exists) ──
+  app.post("/api/admin/setup", async (request, reply) => {
+    if (auth.isSetUp()) {
+      reply.code(403).send({ error: "Admin already configured" });
+      return;
+    }
+    const { username, password } = request.body as { username: string; password: string };
+    if (!username?.trim() || !password || password.length < 8) {
+      reply.code(400).send({ error: "Username required, password must be 8+ characters" });
+      return;
+    }
+    await auth.setup(username.trim(), password);
+    const token = auth.generateToken("full", request.ip);
+    auditLogger.log({ action: "admin_setup", ip: request.ip, details: { username: username.trim() } });
+    return { ok: true, token };
   });
 
   // ── Check if setup is needed ──
@@ -384,7 +396,7 @@ export async function registerAdminRoutes(
 
         let botRunning = false;
         try {
-          const status = execSync("systemctl is-active tiffbot", {
+          const status = execSync("systemctl is-active yetiforge", {
             encoding: "utf-8",
           }).trim();
           botRunning = status === "active";
@@ -481,7 +493,7 @@ export async function registerAdminRoutes(
       return new Promise((resolve) => {
         // Use a small delay so the response can be sent before the process dies
         exec(
-          "sleep 1 && sudo systemctl restart tiffbot 2>&1",
+          "sleep 1 && sudo systemctl restart yetiforge 2>&1",
           { encoding: "utf-8", timeout: 30000 },
           (err, stdout) => {
             if (err) {
@@ -1019,7 +1031,7 @@ export async function registerAdminRoutes(
             },
           });
 
-          // Get Tiffany-voiced summary via chat agent
+          // Get YetiForge-voiced summary via chat agent
           sendEvent("status", {
             message: "Summarizing results...",
             phase: "summary",
@@ -1138,7 +1150,7 @@ export async function registerAdminRoutes(
       if (format === "text") {
         const lines = messages.map((m: WebChatMessage) => {
           const time = new Date(m.timestamp).toISOString();
-          const speaker = m.role === "user" ? "You" : m.role === "assistant" ? "Tiffany" : m.role;
+          const speaker = m.role === "user" ? "You" : m.role === "assistant" ? "YetiForge" : m.role;
           return `[${time}] ${speaker}: ${m.text}`;
         });
         const text = lines.join("\n\n");

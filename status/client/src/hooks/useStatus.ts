@@ -40,7 +40,7 @@ export interface StatusData {
   timestamp: number;
   service: ServiceStatus;
   services: {
-    tiffbot: ServiceStatus;
+    yetiforge: ServiceStatus;
     nginx: ServiceStatus;
   };
   system: SystemStatus;

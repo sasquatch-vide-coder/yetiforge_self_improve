@@ -767,7 +767,7 @@ function detectRestartNeed(output: string): boolean {
   const lower = output.toLowerCase();
   const mentionsRestart = lower.includes("restart needed") ||
     lower.includes("service restart") ||
-    lower.includes("restart tiffbot") ||
+    lower.includes("restart yetiforge") ||
     lower.includes("note: service restart needed");
   return mentionsRestart;
 }

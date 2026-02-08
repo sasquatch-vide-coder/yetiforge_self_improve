@@ -181,7 +181,7 @@ export async function handleMedia(
         },
       });
 
-      // Step 4: Get Tiffany-voiced summary of the work
+      // Step 4: Get YetiForge-voiced summary of the work
       const summaryPrompt = `Work has been completed. Here's the executor's report:\n\n${result.result}\n\nOverall success: ${result.success}\nDuration: ${Math.round(result.durationMs / 1000)}s\nCost: $${result.costUsd.toFixed(4)}\n\nSummarize this for the user in your own words.`;
 
       const finalResult = await chatAgent.invoke({

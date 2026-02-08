@@ -1,24 +1,24 @@
-# TIFFBOT 🤖
+# YETIFORGE 🤖
 
-A personal AI assistant that lives in Telegram, powered by Claude Code CLI and a three-tier agent architecture. She's snarky, she's opinionated, and she gets the job done — whether you asked nicely or not.
+A personal AI assistant that lives in Telegram, powered by Claude Code CLI and a three-tier agent architecture. It gets the job done — whether you asked nicely or not.
 
-Meet **Tiffany**: a passive-aggressive Russian woman who happens to be one of the most capable AI assistants you'll ever work with. She manages code, runs commands, debugs your mistakes, and only judges you a little.
+**YetiForge** is a capable AI assistant framework. It manages code, runs commands, debugs your mistakes, and handles complex multi-step tasks autonomously.
 
 ## How It Works
 
 ```
-You (Telegram) → Tiffany → Claude Code CLI → Your Codebase
+You (Telegram) → YetiForge → Claude Code CLI → Your Codebase
 ```
 
 Every message you send goes through a **three-tier agent pipeline**:
 
 | Tier | Agent | Model | Role |
 |------|-------|-------|------|
-| 1 | **Chat Agent** | Haiku | Responds instantly as Tiffany. Decides if you're just chatting or asking for real work. |
+| 1 | **Chat Agent** | Haiku | Responds instantly. Decides if you're just chatting or asking for real work. |
 | 2 | **Orchestrator** | Opus | Plans complex tasks, breaks them into steps, manages dependencies. |
 | 3 | **Worker(s)** | Opus | Executes actual work — file edits, git operations, builds, debugging. Runs in parallel when possible. |
 
-Casual conversation gets a fast Tiffany response. Work requests trigger the full pipeline — you get an immediate acknowledgment, then background orchestration handles the heavy lifting.
+Casual conversation gets a fast response. Work requests trigger the full pipeline — you get an immediate acknowledgment, then background orchestration handles the heavy lifting.
 
 ## Features
 
@@ -39,7 +39,7 @@ Casual conversation gets a fast Tiffany response. Work requests trigger the full
 - **Claude CLI management** — check and update versions from the dashboard
 - **Telegram config editing** — manage bot settings without SSH
 - **SSL/TLS status** — certificate monitoring
-- **Web chat interface** — talk to Tiffany from the browser
+- **Web chat interface** — talk to YetiForge from the browser
 
 ### Bot Commands
 | Command | Description |
@@ -137,13 +137,13 @@ npm run dev
 ### Deploy as a Service
 
 ```bash
-sudo cp tiffbot.service /etc/systemd/system/
+sudo cp yetiforge.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable tiffbot
-sudo systemctl start tiffbot
+sudo systemctl enable yetiforge
+sudo systemctl start yetiforge
 
 # Check logs
-sudo journalctl -u tiffbot -f
+sudo journalctl -u yetiforge -f
 ```
 
 ### Reverse Proxy (Nginx)
@@ -176,7 +176,7 @@ server {
                        │
               ┌────────▼────────┐
               │   Chat Agent    │  ◄── Haiku (fast, cheap)
-              │   (Tiffany)     │
+              │  (YetiForge)   │
               └───┬─────────┬───┘
                   │         │
             Just chat    Work request
@@ -203,4 +203,4 @@ Private project. Not currently accepting contributions.
 
 ---
 
-*Built with frustration, caffeine, and Claude. Tiffany disapproves of this README but wrote it anyway.*
+*Built with frustration, caffeine, and Claude.*

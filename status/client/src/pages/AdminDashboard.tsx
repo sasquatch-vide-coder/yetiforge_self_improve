@@ -313,7 +313,7 @@ export function AdminDashboard() {
           {status && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               <ServiceCard
-                tiffbot={status.services?.tiffbot || status.service}
+                yetiforge={status.services?.yetiforge || status.service}
                 nginx={status.services?.nginx || { status: "unknown", uptime: null, pid: null, memory: null }}
               />
               <SystemCard

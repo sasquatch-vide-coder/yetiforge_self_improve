@@ -86,7 +86,7 @@ function getServiceStatusByName(serviceName: string): {
 }
 
 function getServiceStatus() {
-  return getServiceStatusByName("tiffbot");
+  return getServiceStatusByName("yetiforge");
 }
 
 function getNginxStatus() {
@@ -160,7 +160,7 @@ async function getProjects(dataDir: string): Promise<ProjectsData> {
 function getRecentLogs(lines: number = 50): Promise<string[]> {
   return new Promise((resolve) => {
     exec(
-      `journalctl -u tiffbot --no-pager -n ${lines} --output=short-iso`,
+      `journalctl -u yetiforge --no-pager -n ${lines} --output=short-iso`,
       { encoding: "utf-8" },
       (err, stdout) => {
         if (err) {
@@ -253,7 +253,7 @@ export async function startStatusServer(dataDir: string, port: number = 3069, co
 
   // API routes (all require auth)
   app.get("/api/status", { preHandler: requireAuth }, async () => {
-    const [tiffbotStatus, nginxStatus, system, sessions, projects] = await Promise.all([
+    const [yetiforgeStatus, nginxStatus, system, sessions, projects] = await Promise.all([
       getServiceStatus(),
       getNginxStatus(),
       getSystemInfo(),
@@ -269,9 +269,9 @@ export async function startStatusServer(dataDir: string, port: number = 3069, co
 
     return {
       timestamp: Date.now(),
-      service: tiffbotStatus,
+      service: yetiforgeStatus,
       services: {
-        tiffbot: tiffbotStatus,
+        yetiforge: yetiforgeStatus,
         nginx: nginxStatus,
       },
       system,

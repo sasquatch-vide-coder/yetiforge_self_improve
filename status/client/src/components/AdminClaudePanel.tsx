@@ -243,7 +243,7 @@ export function AdminClaudePanel({ token }: Props) {
                 <p>3. Sign in via browser.</p>
                 <p>4. Restart service:</p>
                 <pre className="bg-brutal-black text-brutal-green p-1.5 brutal-border overflow-x-auto">
-                  sudo systemctl restart tiffbot
+                  sudo systemctl restart yetiforge
                 </pre>
                 <p className="text-brutal-black/60 italic">
                   Requires browser access via SSH.

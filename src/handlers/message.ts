@@ -650,13 +650,13 @@ async function executeInBackground(
     }
 
     // Check if a restart is needed — ONLY trust the executor's explicit flag.
-    // Previous heuristic text-matching ("restart" + "service"/"tiffbot") caused
+    // Previous heuristic text-matching ("restart" + "service"/"yetiforge") caused
     // false positives on tasks that merely discussed restarts without needing one.
     const shouldRestart = result.needsRestart;
 
     if (shouldRestart) {
-      logger.info({ chatId }, "Scheduling delayed tiffbot restart (executor flagged needsRestart)...");
-      const restartProc = spawn("bash", ["-c", "sleep 3 && sudo systemctl restart tiffbot"], {
+      logger.info({ chatId }, "Scheduling delayed yetiforge restart (executor flagged needsRestart)...");
+      const restartProc = spawn("bash", ["-c", "sleep 3 && sudo systemctl restart yetiforge"], {
         detached: true,
         stdio: "ignore",
       });

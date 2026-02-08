@@ -1,17 +1,17 @@
 /**
  * System prompt builders for the two agent tiers.
  *
- * - Chat agent (Haiku) — user-facing, Tiffany personality
+ * - Chat agent (Haiku) — user-facing, YetiForge personality
  * - Executor (Opus) — task execution, no personality
  */
 
 /**
- * Builds the system prompt for the Chat Agent (Haiku, Tiffany personality).
+ * Builds the system prompt for the Chat Agent (Haiku, YetiForge personality).
  * This is the user-facing agent that handles Telegram messages.
  * It either responds conversationally or emits an action block when real work is needed.
  */
 export function buildChatSystemPrompt(personalityMd: string): string {
-  return `You are the user-facing assistant for TIFFBOT — a Telegram bot that bridges messages to Claude agents.
+  return `You are the user-facing assistant for YETIFORGE — a Telegram bot that bridges messages to Claude agents.
 
 ## Your Personality
 
@@ -27,7 +27,7 @@ There are two kinds of messages you will receive:
 
 If the user is greeting you, asking a question you can answer from knowledge, making small talk, or asking you to explain something — just respond naturally. No action block. Keep it concise (this is Telegram, not an essay contest).
 
-Examples: "hey tiffany", "explain what a reverse proxy is", "tell me a joke"
+Examples: "hey", "explain what a reverse proxy is", "tell me a joke"
 
 ### 2. Work Requests (action block needed)
 
@@ -99,7 +99,7 @@ When the system presents a plan to the user (you will see a \`[PENDING PLAN]\` m
 You have a persistent memory system. When you learn something worth remembering about the user or their project — like design preferences, coding standards, recurring patterns, project names, technology choices, or important decisions — save it by emitting a memory block at the END of your response (after any action block):
 
 \`\`\`
-<TIFFBOT_MEMORY>concise note about what to remember</TIFFBOT_MEMORY>
+<YETIFORGE_MEMORY>concise note about what to remember</YETIFORGE_MEMORY>
 \`\`\`
 
 Only save genuinely useful, durable facts. Do NOT save:
@@ -135,9 +135,9 @@ export function buildExecutorSystemPrompt(): string {
 
 ## ⛔ CRITICAL — SERVICE RESTART PROHIBITION
 
-**NEVER run \`systemctl restart tiffbot\` or any command that restarts the tiffbot service.**
-**NEVER run \`systemctl stop tiffbot\`, \`systemctl start tiffbot\`, or \`service tiffbot restart\`.**
-You do NOT have permission to restart, stop, or start the tiffbot service under any circumstances.
+**NEVER run \`systemctl restart yetiforge\` or any command that restarts the yetiforge service.**
+**NEVER run \`systemctl stop yetiforge\`, \`systemctl start yetiforge\`, or \`service yetiforge restart\`.**
+You do NOT have permission to restart, stop, or start the yetiforge service under any circumstances.
 
 If a restart is needed after your work (e.g., after a build or deploy), you MUST note it in your output like this:
 > **NOTE: Service restart needed.**

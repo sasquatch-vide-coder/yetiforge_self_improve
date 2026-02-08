@@ -261,7 +261,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         <div className="bg-brutal-blue/10 brutal-border px-4 py-3 max-w-[80%] min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <span className="font-bold text-xs uppercase font-mono text-brutal-blue">
-              Tiffany
+              YetiForge
             </span>
           </div>
           <p className="font-mono text-sm whitespace-pre-wrap break-words overflow-wrap-anywhere">{message.text}</p>

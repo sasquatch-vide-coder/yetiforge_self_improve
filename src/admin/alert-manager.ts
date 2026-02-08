@@ -149,7 +149,7 @@ export class AlertManager {
 
   checkBotHealth(): void {
     try {
-      const status = execSync("systemctl is-active tiffbot", {
+      const status = execSync("systemctl is-active yetiforge", {
         encoding: "utf-8",
         timeout: 5000,
       }).trim();

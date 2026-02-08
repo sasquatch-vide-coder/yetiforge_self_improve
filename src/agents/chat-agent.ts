@@ -96,7 +96,7 @@ interface ParsedChatResponse {
 
 function parseChatResponse(text: string): ParsedChatResponse {
   const actionRegex = /<YETIFORGE_ACTION>([\s\S]*?)<\/YETIFORGE_ACTION>/;
-  const memoryRegex = /<TIFFBOT_MEMORY>([\s\S]*?)<\/TIFFBOT_MEMORY>/;
+  const memoryRegex = /<YETIFORGE_MEMORY>([\s\S]*?)<\/YETIFORGE_MEMORY>/;
 
   // Parse action block
   const actionMatch = text.match(actionRegex);

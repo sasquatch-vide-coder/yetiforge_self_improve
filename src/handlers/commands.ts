@@ -35,7 +35,7 @@ export function registerCommands(
 ): void {
   bot.command("start", (ctx) => {
     ctx.reply(
-      "TIFFBOT is ready. Send me a message and I'll pass it to Claude Code.\n\n" +
+      "YETIFORGE is ready. Send me a message and I'll pass it to Claude Code.\n\n" +
       "Commands:\n" +
       "/help - Show this help\n" +
       "/status - Current session info\n" +
@@ -453,10 +453,10 @@ export function registerCommands(
       // Ask chat agent to summarize the conversation and emit memory blocks
       const compactPrompt = `The user has requested a conversation compaction. Please:
 1. Summarize the key points from our conversation so far in 2-3 sentences.
-2. Save any important, durable facts you've learned as <TIFFBOT_MEMORY> blocks.
+2. Save any important, durable facts you've learned as <YETIFORGE_MEMORY> blocks.
 3. Let the user know the conversation context has been cleared but you'll remember the important bits.
 
-Respond in your usual Tiffany voice.`;
+Respond in your usual voice.`;
 
       const result = await chatAgent.invoke({
         chatId,
