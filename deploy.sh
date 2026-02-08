@@ -220,7 +220,7 @@ prompt_with_default() {
         else
             echo -en "  ${ARROW}  ${prompt_text}: "
         fi
-        read -r input
+        read -r input < /dev/tty
         local value="${input:-$default_val}"
 
         if [[ "$required" == "true" && -z "$value" ]]; then
@@ -252,7 +252,7 @@ prompt_yn() {
     [[ "$default" == "n" ]] && hint="y/N"
 
     echo -en "  ${ARROW}  ${prompt_text} ${DIM}[${hint}]${NC}: "
-    read -r input
+    read -r input < /dev/tty
     input="${input:-$default}"
     input=$(echo "$input" | tr '[:upper:]' '[:lower:]')
 
@@ -277,10 +277,10 @@ prompt_secret() {
     while true; do
         echo -en "  ${ARROW}  ${prompt_text}: "
         if [[ "$hidden" == "true" ]]; then
-            read -rs input
+            read -rs input < /dev/tty
             echo ""
         else
-            read -r input
+            read -r input < /dev/tty
         fi
 
         if [[ "$required" == "true" && -z "$input" ]]; then
@@ -1710,7 +1710,7 @@ run_uninstall() {
         CONFIRM_UNINSTALL=true
     else
         echo -en "  ${ARROW}  Are you sure you want to uninstall? ${DIM}[y/N]${NC}: "
-        read -r confirm
+        read -r confirm < /dev/tty
         if [[ "${confirm,,}" != "y" && "${confirm,,}" != "yes" ]]; then
             echo -e "  ${CHECK}  Uninstall cancelled"
             exit 0
@@ -1759,7 +1759,7 @@ run_uninstall() {
         remove_data="y"
     else
         echo -en "  ${WARN}  Remove all data (database, sessions, backups)? ${DIM}[y/N]${NC}: "
-        read -r remove_data
+        read -r remove_data < /dev/tty
     fi
 
     if [[ "${remove_data,,}" == "y" || "${remove_data,,}" == "yes" ]]; then
@@ -1776,7 +1776,7 @@ run_uninstall() {
         remove_env="y"
     else
         echo -en "  ${WARN}  Remove .env configuration? ${DIM}[y/N]${NC}: "
-        read -r remove_env
+        read -r remove_env < /dev/tty
     fi
 
     if [[ "${remove_env,,}" == "y" || "${remove_env,,}" == "yes" ]]; then
@@ -1793,7 +1793,7 @@ run_uninstall() {
         remove_build="y"
     else
         echo -en "  ${ARROW}  Remove build artifacts (node_modules, dist)? ${DIM}[Y/n]${NC}: "
-        read -r remove_build
+        read -r remove_build < /dev/tty
         remove_build="${remove_build:-y}"
     fi
 
@@ -1809,7 +1809,7 @@ run_uninstall() {
         remove_all="y"
     else
         echo -en "  ${WARN}  Remove entire YetiForge directory (${INSTALL_DIR})? ${DIM}[y/N]${NC}: "
-        read -r remove_all
+        read -r remove_all < /dev/tty
     fi
 
     if [[ "${remove_all,,}" == "y" || "${remove_all,,}" == "yes" ]]; then
@@ -1825,7 +1825,7 @@ run_uninstall() {
             remove_ufw="y"
         else
             echo -en "  ${ARROW}  Remove firewall rules for ports 80, 443, 3069? ${DIM}[y/N]${NC}: "
-            read -r remove_ufw
+            read -r remove_ufw < /dev/tty
         fi
 
         if [[ "${remove_ufw,,}" == "y" || "${remove_ufw,,}" == "yes" ]]; then
