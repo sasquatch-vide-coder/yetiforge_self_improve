@@ -907,26 +907,26 @@ install_claude_cli() {
     echo -e "  ${DIM}The bot will work without it, but AI features require it.${NC}"
     echo ""
 
-    prompt_yn "Install Claude Code CLI now? (npm install -g @anthropic-ai/claude-code)" "y" INSTALL_CLAUDE
+    prompt_yn "Install Claude Code CLI now?" "y" INSTALL_CLAUDE
 
     if [[ "$INSTALL_CLAUDE" != "true" ]]; then
         log_info "Skipping Claude CLI installation"
-        log_info "Install later with: npm install -g @anthropic-ai/claude-code"
+        log_info "Install later with: curl -fsSL https://claude.ai/install.sh | bash"
         return 0
     fi
 
     if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "[DRY RUN] Would install @anthropic-ai/claude-code globally"
+        log_info "[DRY RUN] Would install Claude Code CLI"
         return 0
     fi
 
     log_step "Installing Claude Code CLI..."
-    if npm install -g @anthropic-ai/claude-code >> "$INSTALL_LOG" 2>&1; then
+    if curl -fsSL https://claude.ai/install.sh | bash >> "$INSTALL_LOG" 2>&1; then
         log_success "Claude CLI installed"
         log_warn "You must authenticate after install: claude auth"
     else
         log_warn "Claude CLI installation failed (non-fatal)"
-        log_info "Install manually later with: npm install -g @anthropic-ai/claude-code"
+        log_info "Install manually later with: curl -fsSL https://claude.ai/install.sh | bash"
     fi
 }
 
@@ -1453,7 +1453,7 @@ DONE
         echo -e "  ${DIM}────────────────────────────────────────────────────${NC}"
         echo -e "  ${WARN}  Claude CLI not found — bot chat will work, but"
         echo -e "      AI-powered task execution requires Claude Code CLI."
-        echo -e "  ${ARROW}  Install:    ${WHITE}npm install -g @anthropic-ai/claude-code${NC}"
+        echo -e "  ${ARROW}  Install:    ${WHITE}curl -fsSL https://claude.ai/install.sh | bash${NC}"
         echo -e "  ${ARROW}  Auth:       ${WHITE}claude auth${NC}"
         echo -e "  ${ARROW}  Then restart: ${WHITE}sudo systemctl restart yetiforge${NC}"
         echo ""
