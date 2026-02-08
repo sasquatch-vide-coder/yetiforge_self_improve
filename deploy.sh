@@ -1399,13 +1399,13 @@ DONE
 
     echo -e "  ${WHITE}${BOLD}Useful Commands${NC}"
     echo -e "  ${DIM}────────────────────────────────────────────────────${NC}"
-    echo -e "  ${ARROW}  Service status:   ${WHITE}sudo systemctl status yetiforge${NC}"
-    echo -e "  ${ARROW}  View logs:        ${WHITE}sudo journalctl -u yetiforge -f${NC}"
-    echo -e "  ${ARROW}  Restart service:  ${WHITE}sudo systemctl restart yetiforge${NC}"
-    echo -e "  ${ARROW}  Stop service:     ${WHITE}sudo systemctl stop yetiforge${NC}"
-    echo -e "  ${ARROW}  Edit config:      ${WHITE}nano ${INSTALL_DIR}/.env${NC}"
-    echo -e "  ${ARROW}  Update:           ${WHITE}sudo bash ${INSTALL_DIR}/deploy.sh update${NC}"
-    echo -e "  ${ARROW}  Uninstall:        ${WHITE}sudo bash ${INSTALL_DIR}/deploy.sh uninstall${NC}"
+    echo -e "  ${ARROW}  Service status:   ${GREEN}sudo systemctl status yetiforge${NC}"
+    echo -e "  ${ARROW}  View logs:        ${GREEN}sudo journalctl -u yetiforge -f${NC}"
+    echo -e "  ${ARROW}  Restart service:  ${GREEN}sudo systemctl restart yetiforge${NC}"
+    echo -e "  ${ARROW}  Stop service:     ${GREEN}sudo systemctl stop yetiforge${NC}"
+    echo -e "  ${ARROW}  Edit config:      ${GREEN}nano ${INSTALL_DIR}/.env${NC}"
+    echo -e "  ${ARROW}  Update:           ${GREEN}sudo bash ${INSTALL_DIR}/deploy.sh update${NC}"
+    echo -e "  ${ARROW}  Uninstall:        ${GREEN}sudo bash ${INSTALL_DIR}/deploy.sh uninstall${NC}"
     echo ""
 
     # Claude CLI status
@@ -1414,24 +1414,24 @@ DONE
         echo -e "  ${WHITE}${BOLD}Claude Code CLI${NC}"
         echo -e "  ${DIM}────────────────────────────────────────────────────${NC}"
         echo -e "  ${CHECK}  Claude CLI is installed"
-        echo -e "  ${ARROW}  Authenticate: ${WHITE}${claude_bin} auth${NC}"
-        echo -e "  ${ARROW}  Then restart:  ${WHITE}sudo systemctl restart yetiforge${NC}"
+        echo -e "  ${ARROW}  Authenticate: ${GREEN}${claude_bin} auth${NC}"
+        echo -e "  ${ARROW}  Then restart:  ${GREEN}sudo systemctl restart yetiforge${NC}"
         echo ""
     elif [[ "${CFG_CLAUDE_PATH:-claude}" == "claude" ]]; then
         echo -e "  ${WHITE}${BOLD}⚠ Claude Code CLI${NC}"
         echo -e "  ${DIM}────────────────────────────────────────────────────${NC}"
         echo -e "  ${WARN}  Claude CLI not found — bot chat will work, but"
         echo -e "      AI-powered task execution requires Claude Code CLI."
-        echo -e "  ${ARROW}  Install:    ${WHITE}curl -fsSL https://claude.ai/install.sh | bash${NC}"
-        echo -e "  ${ARROW}  Auth:       ${WHITE}claude auth${NC}"
-        echo -e "  ${ARROW}  Then restart: ${WHITE}sudo systemctl restart yetiforge${NC}"
+        echo -e "  ${ARROW}  Install:    ${GREEN}curl -fsSL https://claude.ai/install.sh | bash${NC}"
+        echo -e "  ${ARROW}  Auth:       ${GREEN}claude auth${NC}"
+        echo -e "  ${ARROW}  Then restart: ${GREEN}sudo systemctl restart yetiforge${NC}"
         echo ""
     fi
 
     if [[ "$HAS_DOMAIN" == "true" && "$SSL_CONFIGURED" != "true" ]]; then
         echo -e "  ${WHITE}${BOLD}🔒 SSL Certificate${NC}"
         echo -e "  ${DIM}────────────────────────────────────────────────────${NC}"
-        echo -e "  ${ARROW}  Set up HTTPS: ${WHITE}sudo certbot --nginx -d ${CFG_DOMAIN}${NC}"
+        echo -e "  ${ARROW}  Set up HTTPS: ${GREEN}sudo certbot --nginx -d ${CFG_DOMAIN}${NC}"
         echo ""
     fi
 
