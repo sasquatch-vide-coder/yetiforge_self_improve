@@ -132,9 +132,13 @@ ARROW="${CYAN}→${NC}"
 WARN="${YELLOW}⚠${NC}"
 INFO="${BLUE}ℹ${NC}"
 
+# Divider widths
+DIVIDER_STEP=$(printf '%.0s─' $(seq 1 60))
+DIVIDER_SUB=$(printf '%.0s─' $(seq 1 52))
+
 # Step counter
 CURRENT_STEP=0
-TOTAL_STEPS=8
+TOTAL_STEPS=9
 
 show_banner() {
     clear 2>/dev/null || true
@@ -153,7 +157,7 @@ BANNER
     echo -e "    ${WHITE}${BOLD}AI-Powered Telegram Bot Framework${NC}  ${DIM}v${DEPLOY_VERSION}${NC}"
     echo -e "    ${DIM}One-command deployment • Production-ready • Open source${NC}"
     echo ""
-    echo -e "    ${DIM}────────────────────────────────────────────────────────${NC}"
+    echo -e "    ${DIM}${DIVIDER_SUB}${NC}"
     echo ""
 }
 
@@ -161,7 +165,7 @@ step_header() {
     CURRENT_STEP=$((CURRENT_STEP + 1))
     echo ""
     echo -e "  ${BOLD}${WHITE}[$CURRENT_STEP/$TOTAL_STEPS]${NC} ${BOLD}$1${NC}"
-    echo -e "  ${DIM}$(printf '%.0s─' $(seq 1 60))${NC}"
+    echo -e "  ${DIM}${DIVIDER_STEP}${NC}"
 }
 
 log_info() {
@@ -194,7 +198,7 @@ spinner() {
         printf "\r  ${CYAN}${c}${NC}  ${msg}" >&2
         sleep 0.1
     done
-    printf "\r" >&2
+    printf "\r\033[K" >&2
 }
 
 prompt_with_default() {
@@ -311,6 +315,18 @@ show_box() {
     done
     echo -e "  ${CYAN}╚$(printf '═%.0s' $(seq 1 $width))╝${NC}"
     echo ""
+}
+
+is_private_ip() {
+    local ip="$1"
+    case "$ip" in
+        10.*)          return 0 ;;
+        172.1[6-9].*)  return 0 ;;
+        172.2[0-9].*)  return 0 ;;
+        172.3[0-1].*)  return 0 ;;
+        192.168.*)     return 0 ;;
+        *)             return 1 ;;
+    esac
 }
 
 handle_error() {
@@ -896,6 +912,78 @@ install_claude_cli() {
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Section 9b: authenticate_claude() — interactive auth prompt
+# ══════════════════════════════════════════════════════════════════════════════
+
+authenticate_claude() {
+    step_header "Claude CLI Authentication"
+
+    # Skip in auto mode
+    if [[ "$AUTO_MODE" == "true" ]]; then
+        log_info "Skipping interactive auth in --auto mode"
+        log_info "Run 'claude auth' manually after install"
+        CLAUDE_AUTH_OK=false
+        return 0
+    fi
+
+    # Check if claude is available
+    local claude_bin=""
+    if command -v claude &> /dev/null; then
+        claude_bin="claude"
+    elif [[ -f "/home/${INSTALL_USER}/.local/bin/claude" ]]; then
+        claude_bin="/home/${INSTALL_USER}/.local/bin/claude"
+    fi
+
+    if [[ -z "$claude_bin" ]]; then
+        log_warn "Claude CLI not found — skipping authentication"
+        CLAUDE_AUTH_OK=false
+        return 0
+    fi
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "[DRY RUN] Would prompt for Claude CLI authentication"
+        CLAUDE_AUTH_OK=false
+        return 0
+    fi
+
+    echo ""
+    echo -e "  ${DIM}Claude CLI needs to be authenticated with your Anthropic account.${NC}"
+    echo -e "  ${DIM}This will open a browser-based login flow.${NC}"
+    echo ""
+
+    prompt_yn "Authenticate Claude CLI now?" "y" DO_CLAUDE_AUTH
+
+    if [[ "$DO_CLAUDE_AUTH" != "true" ]]; then
+        log_info "Skipping — you can authenticate later with: claude auth"
+        CLAUDE_AUTH_OK=false
+        return 0
+    fi
+
+    log_step "Running claude auth (follow the browser prompts)..."
+    echo ""
+
+    local auth_ok=false
+    if [[ -n "${SUDO_USER:-}" ]] && [[ "${INSTALL_USER}" != "root" ]]; then
+        if sudo -H -u "${INSTALL_USER}" bash -c "'${claude_bin}' auth" < /dev/tty; then
+            auth_ok=true
+        fi
+    else
+        if "${claude_bin}" auth < /dev/tty; then
+            auth_ok=true
+        fi
+    fi
+
+    echo ""
+    if [[ "$auth_ok" == "true" ]]; then
+        log_success "Claude CLI authenticated successfully"
+        CLAUDE_AUTH_OK=true
+    else
+        log_warn "Claude auth did not complete — you can retry later with: claude auth"
+        CLAUDE_AUTH_OK=false
+    fi
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Section 10: run_build() (from build.sh)
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -1195,7 +1283,12 @@ NGINXCONF
         fi
         log_success "Firewall rules configured"
     else
-        log_info "No UFW — ensure ports 80, 443, ${CFG_PORT:-$DEFAULT_PORT} are open"
+        log_warn "UFW not found — firewall rules must be configured manually"
+        log_info "Run these commands to open the required ports:"
+        log_info "  ${GREEN}sudo iptables -A INPUT -p tcp --dport 80 -j ACCEPT${NC}"
+        log_info "  ${GREEN}sudo iptables -A INPUT -p tcp --dport 443 -j ACCEPT${NC}"
+        log_info "  ${GREEN}sudo iptables -A INPUT -p tcp --dport ${CFG_PORT:-$DEFAULT_PORT} -j ACCEPT${NC}"
+        log_info "To persist rules across reboots: ${GREEN}sudo apt-get install -y iptables-persistent${NC}"
     fi
 
     echo ""
@@ -1359,7 +1452,7 @@ run_finalize() {
         api_url="http://${external_ip:-${internal_ip}}/api/status"
     fi
 
-    if [[ -n "$internal_ip" ]]; then
+    if [[ -n "$internal_ip" ]] && [[ "$internal_ip" != "$external_ip" ]] && is_private_ip "$internal_ip"; then
         internal_url="http://${internal_ip}"
     fi
 
@@ -1367,19 +1460,12 @@ run_finalize() {
     local install_time=$((SECONDS / 60))
 
     echo ""
-    echo ""
-    echo -e "${CYAN}"
-    cat << 'DONE'
-    ╔══════════════════════════════════════════════════════════════════╗
-    ║                                                                  ║
-    ║        🎉  YetiForge Installation Complete!  🎉                 ║
-    ║                                                                  ║
-    ╚══════════════════════════════════════════════════════════════════╝
-DONE
-    echo -e "${NC}"
+    show_box "YetiForge Installation Complete!" \
+        "" \
+        "Your bot framework is ready to go."
 
     echo -e "  ${WHITE}${BOLD}Access Your Instance${NC}"
-    echo -e "  ${DIM}────────────────────────────────────────────────────${NC}"
+    echo -e "  ${DIM}${DIVIDER_SUB}${NC}"
     echo -e "  ${ARROW}  Dashboard:  ${GREEN}${BOLD}${dashboard_url}${NC}"
     echo -e "  ${ARROW}  API Status: ${GREEN}${api_url}${NC}"
     echo -e "  ${ARROW}  Admin:      ${GREEN}${dashboard_url}/admin${NC}"
@@ -1390,20 +1476,20 @@ DONE
     echo ""
 
     echo -e "  ${WHITE}${BOLD}Telegram Bot${NC}"
-    echo -e "  ${DIM}────────────────────────────────────────────────────${NC}"
+    echo -e "  ${DIM}${DIVIDER_SUB}${NC}"
     echo -e "  ${ARROW}  Open Telegram and send ${WHITE}/start${NC} to your bot"
     echo -e "  ${ARROW}  The bot will respond if your user ID is authorized"
     echo ""
 
     echo -e "  ${WHITE}${BOLD}Admin Dashboard Setup${NC}"
-    echo -e "  ${DIM}────────────────────────────────────────────────────${NC}"
+    echo -e "  ${DIM}${DIVIDER_SUB}${NC}"
     echo -e "  ${ARROW}  Visit ${WHITE}${dashboard_url}/admin${NC}"
     echo -e "  ${ARROW}  On first visit, you'll create an admin account"
     echo -e "  ${ARROW}  Optional: Enable 2FA for extra security"
     echo ""
 
     echo -e "  ${WHITE}${BOLD}Useful Commands${NC}"
-    echo -e "  ${DIM}────────────────────────────────────────────────────${NC}"
+    echo -e "  ${DIM}${DIVIDER_SUB}${NC}"
     echo -e "  ${ARROW}  Service status:   ${GREEN}sudo systemctl status yetiforge${NC}"
     echo -e "  ${ARROW}  View logs:        ${GREEN}sudo journalctl -u yetiforge -f${NC}"
     echo -e "  ${ARROW}  Restart service:  ${GREEN}sudo systemctl restart yetiforge${NC}"
@@ -1413,27 +1499,27 @@ DONE
     echo -e "  ${ARROW}  Uninstall:        ${GREEN}sudo bash ${INSTALL_DIR}/deploy.sh uninstall${NC}"
     echo ""
 
-    # Claude CLI — show clear post-install steps
-    echo -e "  ${YELLOW}${BOLD}╔══════════════════════════════════════════════════════════╗${NC}"
-    echo -e "  ${YELLOW}${BOLD}║          IMPORTANT: Complete These 3 Steps              ║${NC}"
-    echo -e "  ${YELLOW}${BOLD}╚══════════════════════════════════════════════════════════╝${NC}"
-    echo ""
-    echo -e "  ${WHITE}${BOLD}  Step 1.${NC} Set up your PATH for Claude CLI:"
-    echo ""
-    echo -e "     ${GREEN}${BOLD}echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.bashrc && source ~/.bashrc${NC}"
-    echo ""
-    echo -e "  ${WHITE}${BOLD}  Step 2.${NC} Authenticate Claude with your Anthropic account:"
-    echo ""
-    echo -e "     ${GREEN}${BOLD}claude auth${NC}"
-    echo ""
-    echo -e "  ${WHITE}${BOLD}  Step 3.${NC} Restart the service to pick up the auth:"
-    echo ""
-    echo -e "     ${GREEN}${BOLD}sudo systemctl restart yetiforge${NC}"
-    echo ""
+    # Claude CLI — show post-install steps only if auth was skipped
+    if [[ "$CLAUDE_AUTH_OK" != "true" ]]; then
+        echo -e "  ${WHITE}${BOLD}Claude CLI Setup${NC}"
+        echo -e "  ${DIM}${DIVIDER_SUB}${NC}"
+        echo -e "  ${ARROW}  Authenticate Claude with your Anthropic account:"
+        echo ""
+        echo -e "     ${GREEN}${BOLD}claude auth${NC}"
+        echo ""
+        echo -e "  ${ARROW}  Then restart the service:"
+        echo ""
+        echo -e "     ${GREEN}${BOLD}sudo systemctl restart yetiforge${NC}"
+        echo ""
+        echo -e "  ${ARROW}  Set up your admin account at:"
+        echo ""
+        echo -e "     ${GREEN}${BOLD}${dashboard_url}/admin${NC}"
+        echo ""
+    fi
 
     if [[ "$HAS_DOMAIN" == "true" && "$SSL_CONFIGURED" != "true" ]]; then
         echo -e "  ${WHITE}${BOLD}🔒 SSL Certificate${NC}"
-        echo -e "  ${DIM}────────────────────────────────────────────────────${NC}"
+        echo -e "  ${DIM}${DIVIDER_SUB}${NC}"
         echo -e "  ${ARROW}  Set up HTTPS: ${GREEN}sudo certbot --nginx -d ${CFG_DOMAIN}${NC}"
         echo ""
     fi
@@ -1826,6 +1912,7 @@ main() {
     SERVICE_WAS_RUNNING=false
     HAS_DOMAIN=false
     SSL_CONFIGURED=false
+    CLAUDE_AUTH_OK=false
     UFW_AVAILABLE=false
     INSTALL_DIR=""
     SUDO_CMD=""
@@ -1860,7 +1947,8 @@ main() {
             run_build               # Step 5: npm install + build
             setup_services          # Step 6: systemd + nginx
             setup_ssl               # Step 7: Optional SSL
-            run_finalize            # Final: Health check + summary
+            authenticate_claude     # Step 8: Claude CLI auth
+            run_finalize            # Step 9: Health check + summary
 
             # Cleanup temp files
             rm -f /tmp/yetiforge.service /tmp/yetiforge-nginx.conf
