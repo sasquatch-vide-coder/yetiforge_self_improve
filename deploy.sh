@@ -1452,17 +1452,20 @@ DONE
     echo -e "  ${ARROW}  Uninstall:        ${GREEN}sudo bash ${INSTALL_DIR}/deploy.sh uninstall${NC}"
     echo ""
 
-    # Claude CLI — next steps
+    # Claude CLI — auto-run setup or show manual steps
     local claude_bin="/home/${INSTALL_USER}/.local/bin/claude"
     if [[ -f "${INSTALL_DIR}/setup-claude.sh" ]]; then
-        echo -e "  ${WHITE}${BOLD}Next Step — Claude CLI Setup${NC}"
+        echo -e "  ${WHITE}${BOLD}Claude CLI Setup${NC}"
         echo -e "  ${DIM}────────────────────────────────────────────────────${NC}"
-        echo -e "  ${CHECK}  Claude CLI is installed. Finish setup with one command:"
+        echo -e "  ${ARROW}  Launching Claude authentication..."
+        echo -e "  ${DIM}  (You can re-run later with: bash ${INSTALL_DIR}/setup-claude.sh)${NC}"
         echo ""
-        echo -e "     ${GREEN}${BOLD}bash ${INSTALL_DIR}/setup-claude.sh${NC}"
-        echo ""
-        echo -e "  ${DIM}This will set your PATH, open Claude auth, and restart the service.${NC}"
-        echo ""
+        # Run as the service user so auth tokens land in the right home dir
+        if [[ -n "${SUDO_USER:-}" ]] && [[ "${INSTALL_USER}" != "root" ]]; then
+            sudo -u "${INSTALL_USER}" bash "${INSTALL_DIR}/setup-claude.sh" </dev/tty || true
+        else
+            bash "${INSTALL_DIR}/setup-claude.sh" </dev/tty || true
+        fi
     elif ! command -v claude &> /dev/null && [[ ! -f "$claude_bin" ]]; then
         echo -e "  ${WHITE}${BOLD}Next Steps — Claude CLI Setup${NC}"
         echo -e "  ${DIM}────────────────────────────────────────────────────${NC}"
