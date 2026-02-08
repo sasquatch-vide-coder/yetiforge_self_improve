@@ -894,7 +894,40 @@ install_claude_cli() {
         else
             log_success "Claude CLI installed"
         fi
-        log_info "Run 'claude auth' after install to authenticate"
+
+        # Generate helper script that walks the user through auth + restart
+        local setup_script="${INSTALL_DIR}/setup-claude.sh"
+        cat > "$setup_script" << 'SETUPEOF'
+#!/usr/bin/env bash
+set -euo pipefail
+GREEN='\033[0;32m'; WHITE='\033[1;37m'; CYAN='\033[0;36m'; NC='\033[0m'
+echo ""
+echo -e "  ${CYAN}Setting up Claude CLI...${NC}"
+echo ""
+export PATH="$HOME/.local/bin:$PATH"
+if ! command -v claude &> /dev/null; then
+    echo -e "  ${WHITE}Claude CLI not found in PATH. Install it first:${NC}"
+    echo -e "  ${GREEN}curl -fsSL https://claude.ai/install.sh | bash${NC}"
+    exit 1
+fi
+echo -e "  ${GREEN}✓${NC}  PATH loaded — claude found at $(which claude)"
+echo ""
+echo -e "  ${CYAN}Opening Claude authentication...${NC}"
+echo ""
+claude auth
+echo ""
+echo -e "  ${GREEN}✓${NC}  Authentication complete!"
+echo ""
+echo -e "  ${CYAN}Restarting YetiForge service...${NC}"
+sudo systemctl restart yetiforge
+echo -e "  ${GREEN}✓${NC}  Service restarted — YetiForge is ready!"
+echo ""
+SETUPEOF
+        chmod +x "$setup_script"
+        if [[ -n "${SUDO_USER:-}" ]] && [[ "${INSTALL_USER}" != "root" ]]; then
+            chown "${INSTALL_USER}:${INSTALL_USER}" "$setup_script"
+        fi
+        log_success "Setup helper created at ${setup_script}"
     else
         log_warn "Claude CLI installation failed (non-fatal)"
         log_info "Install manually later with: curl -fsSL https://claude.ai/install.sh | bash"
@@ -1421,21 +1454,16 @@ DONE
 
     # Claude CLI — next steps
     local claude_bin="/home/${INSTALL_USER}/.local/bin/claude"
-    if command -v claude &> /dev/null || [[ -f "$claude_bin" ]]; then
-        echo -e "  ${WHITE}${BOLD}Next Steps — Claude CLI Setup${NC}"
+    if [[ -f "${INSTALL_DIR}/setup-claude.sh" ]]; then
+        echo -e "  ${WHITE}${BOLD}Next Step — Claude CLI Setup${NC}"
         echo -e "  ${DIM}────────────────────────────────────────────────────${NC}"
-        echo -e "  ${CHECK}  Claude CLI is installed. Run these commands to finish setup:"
+        echo -e "  ${CHECK}  Claude CLI is installed. Finish setup with one command:"
         echo ""
-        echo -e "  ${WHITE}${BOLD}  1.${NC} Load the PATH so your shell can find claude:"
-        echo -e "     ${GREEN}export PATH=\"\$HOME/.local/bin:\$PATH\"${NC}"
+        echo -e "     ${GREEN}${BOLD}bash ${INSTALL_DIR}/setup-claude.sh${NC}"
         echo ""
-        echo -e "  ${WHITE}${BOLD}  2.${NC} Authenticate with your Anthropic account:"
-        echo -e "     ${GREEN}claude auth${NC}"
+        echo -e "  ${DIM}This will set your PATH, open Claude auth, and restart the service.${NC}"
         echo ""
-        echo -e "  ${WHITE}${BOLD}  3.${NC} Restart the service to pick up the auth:"
-        echo -e "     ${GREEN}sudo systemctl restart yetiforge${NC}"
-        echo ""
-    elif [[ "${CFG_CLAUDE_PATH:-claude}" == "claude" ]]; then
+    elif ! command -v claude &> /dev/null && [[ ! -f "$claude_bin" ]]; then
         echo -e "  ${WHITE}${BOLD}Next Steps — Claude CLI Setup${NC}"
         echo -e "  ${DIM}────────────────────────────────────────────────────${NC}"
         echo -e "  ${WARN}  Claude CLI not found — install it to enable AI features:"
@@ -1443,13 +1471,10 @@ DONE
         echo -e "  ${WHITE}${BOLD}  1.${NC} Install the Claude CLI:"
         echo -e "     ${GREEN}curl -fsSL https://claude.ai/install.sh | bash${NC}"
         echo ""
-        echo -e "  ${WHITE}${BOLD}  2.${NC} Load the PATH so your shell can find claude:"
-        echo -e "     ${GREEN}export PATH=\"\$HOME/.local/bin:\$PATH\"${NC}"
+        echo -e "  ${WHITE}${BOLD}  2.${NC} Authenticate with your Anthropic account:"
+        echo -e "     ${GREEN}export PATH=\"\$HOME/.local/bin:\$PATH\" && claude auth${NC}"
         echo ""
-        echo -e "  ${WHITE}${BOLD}  3.${NC} Authenticate with your Anthropic account:"
-        echo -e "     ${GREEN}claude auth${NC}"
-        echo ""
-        echo -e "  ${WHITE}${BOLD}  4.${NC} Restart the service to pick up the auth:"
+        echo -e "  ${WHITE}${BOLD}  3.${NC} Restart the service:"
         echo -e "     ${GREEN}sudo systemctl restart yetiforge${NC}"
         echo ""
     fi
