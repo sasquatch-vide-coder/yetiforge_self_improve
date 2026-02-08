@@ -1343,11 +1343,14 @@ run_finalize() {
     fi
 
     # ── Determine access URLs ──
-    local server_ip
-    server_ip=$(curl -sf --connect-timeout 3 https://ifconfig.me 2>/dev/null || curl -sf --connect-timeout 3 https://icanhazip.com 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')
+    local external_ip
+    external_ip=$(curl -sf --connect-timeout 3 https://ifconfig.me 2>/dev/null || curl -sf --connect-timeout 3 https://icanhazip.com 2>/dev/null || echo "")
+    local internal_ip
+    internal_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "")
 
     local dashboard_url=""
     local api_url=""
+    local internal_url=""
     local protocol="http"
 
     if [[ "$SSL_CONFIGURED" == "true" ]]; then
@@ -1358,8 +1361,12 @@ run_finalize() {
         dashboard_url="${protocol}://${CFG_DOMAIN}"
         api_url="${protocol}://${CFG_DOMAIN}/api/status"
     else
-        dashboard_url="http://${server_ip}"
-        api_url="http://${server_ip}/api/status"
+        dashboard_url="http://${external_ip:-${internal_ip}}"
+        api_url="http://${external_ip:-${internal_ip}}/api/status"
+    fi
+
+    if [[ -n "$internal_ip" ]]; then
+        internal_url="http://${internal_ip}"
     fi
 
     # ── Installation Summary ──
@@ -1382,6 +1389,9 @@ DONE
     echo -e "  ${ARROW}  Dashboard:  ${GREEN}${BOLD}${dashboard_url}${NC}"
     echo -e "  ${ARROW}  API Status: ${GREEN}${api_url}${NC}"
     echo -e "  ${ARROW}  Admin:      ${GREEN}${dashboard_url}/admin${NC}"
+    if [[ -n "$internal_url" ]] && [[ "$internal_url" != "$dashboard_url" ]]; then
+        echo -e "  ${ARROW}  LAN:        ${GREEN}${internal_url}${NC}"
+    fi
     echo ""
 
     echo -e "  ${WHITE}${BOLD}Telegram Bot${NC}"
