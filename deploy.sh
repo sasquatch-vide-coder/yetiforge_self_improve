@@ -876,18 +876,13 @@ install_claude_cli() {
     fi
 
     if [[ "$cli_installed" == "true" ]]; then
-        # Add install location to PATH for current script session
-        export PATH="/home/${INSTALL_USER}/.local/bin:$PATH"
-
-        # Ensure PATH persists for the user's future shell sessions
+        # Add ~/.local/bin to user's bashrc and current session
         local user_bashrc="/home/${INSTALL_USER}/.bashrc"
-        local path_line='export PATH="$HOME/.local/bin:$PATH"'
         if [[ -f "$user_bashrc" ]] && ! grep -qF '.local/bin' "$user_bashrc" 2>/dev/null; then
-            echo "" >> "$user_bashrc"
-            echo "# Added by YetiForge installer — Claude CLI" >> "$user_bashrc"
-            echo "$path_line" >> "$user_bashrc"
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$user_bashrc"
             log_success "Added ~/.local/bin to PATH in .bashrc"
         fi
+        export PATH="/home/${INSTALL_USER}/.local/bin:$PATH"
 
         if command -v claude &> /dev/null; then
             log_success "Claude CLI installed ($(claude --version 2>/dev/null || echo 'version unknown'))"
@@ -904,7 +899,7 @@ GREEN='\033[0;32m'; WHITE='\033[1;37m'; CYAN='\033[0;36m'; NC='\033[0m'
 echo ""
 echo -e "  ${CYAN}Setting up Claude CLI...${NC}"
 echo ""
-export PATH="$HOME/.local/bin:$PATH"
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 if ! command -v claude &> /dev/null; then
     echo -e "  ${WHITE}Claude CLI not found in PATH. Install it first:${NC}"
     echo -e "  ${GREEN}curl -fsSL https://claude.ai/install.sh | bash${NC}"
