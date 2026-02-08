@@ -863,7 +863,19 @@ install_claude_cli() {
     fi
 
     log_step "Installing Claude Code CLI..."
-    if curl -fsSL https://claude.ai/install.sh | bash >> "$INSTALL_LOG" 2>&1; then
+    # Install as the service user, not root, so the binary lands in the right home dir
+    local cli_installed=false
+    if [[ -n "${SUDO_USER:-}" ]] && [[ "${INSTALL_USER}" != "root" ]]; then
+        if sudo -u "${INSTALL_USER}" bash -c 'curl -fsSL https://claude.ai/install.sh | bash' >> "$INSTALL_LOG" 2>&1; then
+            cli_installed=true
+        fi
+    else
+        if curl -fsSL https://claude.ai/install.sh | bash >> "$INSTALL_LOG" 2>&1; then
+            cli_installed=true
+        fi
+    fi
+
+    if [[ "$cli_installed" == "true" ]]; then
         # Add install location to PATH for current session
         export PATH="/home/${INSTALL_USER}/.local/bin:$PATH"
         if command -v claude &> /dev/null; then
