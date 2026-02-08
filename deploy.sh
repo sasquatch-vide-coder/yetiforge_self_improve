@@ -1358,8 +1358,8 @@ run_finalize() {
         dashboard_url="${protocol}://${CFG_DOMAIN}"
         api_url="${protocol}://${CFG_DOMAIN}/api/status"
     else
-        dashboard_url="http://${server_ip}:${status_port}"
-        api_url="http://${server_ip}:${status_port}/api/status"
+        dashboard_url="http://${server_ip}"
+        api_url="http://${server_ip}/api/status"
     fi
 
     # ── Installation Summary ──
