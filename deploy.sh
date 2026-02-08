@@ -891,36 +891,45 @@ install_claude_cli() {
         fi
 
         # Generate helper script that walks the user through auth + restart
+        # Use unquoted heredoc so ${INSTALL_USER} expands to the actual username
         local setup_script="${INSTALL_DIR}/setup-claude.sh"
-        cat > "$setup_script" << 'SETUPEOF'
+        cat > "$setup_script" << SETUPEOF
 #!/usr/bin/env bash
-set -euo pipefail
 GREEN='\033[0;32m'; WHITE='\033[1;37m'; CYAN='\033[0;36m'; NC='\033[0m'
+CLAUDE_BIN="/home/${INSTALL_USER}/.local/bin/claude"
 echo ""
-echo -e "  ${CYAN}Setting up Claude CLI...${NC}"
+echo -e "  \${CYAN}Setting up Claude CLI...\${NC}"
 echo ""
-# Set PATH directly (source ~/.bashrc won't work in non-interactive scripts)
-export PATH="$HOME/.local/bin:$PATH"
-# Also persist to bashrc for future interactive sessions
-if ! grep -qF '.local/bin' ~/.bashrc 2>/dev/null; then
-    echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+# Check known install locations
+if [[ ! -f "\$CLAUDE_BIN" ]]; then
+    # Try other common locations
+    for loc in /usr/local/bin/claude "\$HOME/.local/bin/claude" "\$HOME/.npm-global/bin/claude"; do
+        if [[ -f "\$loc" ]]; then
+            CLAUDE_BIN="\$loc"
+            break
+        fi
+    done
 fi
-if ! command -v claude &> /dev/null; then
-    echo -e "  ${WHITE}Claude CLI not found in PATH. Install it first:${NC}"
-    echo -e "  ${GREEN}curl -fsSL https://claude.ai/install.sh | bash${NC}"
+if [[ ! -f "\$CLAUDE_BIN" ]]; then
+    echo -e "  \${WHITE}Claude CLI not found. Install it first:\${NC}"
+    echo -e "  \${GREEN}curl -fsSL https://claude.ai/install.sh | bash\${NC}"
     exit 1
 fi
-echo -e "  ${GREEN}✓${NC}  PATH loaded — claude found at $(which claude)"
+# Persist to bashrc for future interactive sessions
+if ! grep -qF '.local/bin' "\$HOME/.bashrc" 2>/dev/null; then
+    echo 'export PATH="\$HOME/.local/bin:\$PATH"' >> "\$HOME/.bashrc"
+fi
+echo -e "  \${GREEN}✓\${NC}  Claude CLI found at \$CLAUDE_BIN"
 echo ""
-echo -e "  ${CYAN}Opening Claude authentication...${NC}"
+echo -e "  \${CYAN}Opening Claude authentication...\${NC}"
 echo ""
-claude auth
+"\$CLAUDE_BIN" auth
 echo ""
-echo -e "  ${GREEN}✓${NC}  Authentication complete!"
+echo -e "  \${GREEN}✓\${NC}  Authentication complete!"
 echo ""
-echo -e "  ${CYAN}Restarting YetiForge service...${NC}"
+echo -e "  \${CYAN}Restarting YetiForge service...\${NC}"
 sudo systemctl restart yetiforge
-echo -e "  ${GREEN}✓${NC}  Service restarted — YetiForge is ready!"
+echo -e "  \${GREEN}✓\${NC}  Service restarted — YetiForge is ready!"
 echo ""
 SETUPEOF
         chmod +x "$setup_script"
