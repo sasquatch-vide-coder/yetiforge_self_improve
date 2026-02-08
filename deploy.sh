@@ -1424,9 +1424,10 @@ DONE
     if command -v claude &> /dev/null || [[ -f "$claude_bin" ]]; then
         echo -e "  ${WHITE}${BOLD}Claude Code CLI${NC}"
         echo -e "  ${DIM}────────────────────────────────────────────────────${NC}"
-        echo -e "  ${CHECK}  Claude CLI is installed"
-        echo -e "  ${ARROW}  Authenticate: ${GREEN}${claude_bin} auth${NC}"
-        echo -e "  ${ARROW}  Then restart:  ${GREEN}sudo systemctl restart yetiforge${NC}"
+        echo -e "  ${CHECK}  Claude CLI is installed — run these 3 commands:"
+        echo -e "  ${ARROW}  ${GREEN}source ~/.bashrc${NC}"
+        echo -e "  ${ARROW}  ${GREEN}claude auth${NC}"
+        echo -e "  ${ARROW}  ${GREEN}sudo systemctl restart yetiforge${NC}"
         echo ""
     elif [[ "${CFG_CLAUDE_PATH:-claude}" == "claude" ]]; then
         echo -e "  ${WHITE}${BOLD}⚠ Claude Code CLI${NC}"
