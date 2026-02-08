@@ -2,6 +2,7 @@ node_modules/
 dist/
 data/
 .env
+CLAUDE.md
 *.log
 ssh/
 status/client/dist/

@@ -76,8 +76,8 @@ export async function registerAdminRoutes(
       return;
     }
     const { username, password } = request.body as { username: string; password: string };
-    if (!username?.trim() || !password || password.length < 8) {
-      reply.code(400).send({ error: "Username required, password must be 8+ characters" });
+    if (!username?.trim() || !password || password.length < 14) {
+      reply.code(400).send({ error: "Username required, password must be 14+ characters" });
       return;
     }
     await auth.setup(username.trim(), password);
@@ -98,6 +98,63 @@ export async function registerAdminRoutes(
   app.get("/api/bot/config", async () => {
     return { botName: botConfigManager?.getBotName() || "YETIFORGE" };
   });
+
+  // ── Bot Config Update (protected) ──
+  app.post(
+    "/api/admin/bot/config",
+    { preHandler: requireAuth(auth) },
+    async (request, reply) => {
+      if (!botConfigManager) {
+        reply.code(500).send({ error: "Bot config not available" });
+        return;
+      }
+
+      const body = request.body as {
+        botName?: string;
+        serviceName?: string;
+        agentName?: string;
+      };
+
+      if (!body.botName && !body.serviceName && !body.agentName) {
+        reply.code(400).send({ error: "Provide at least one of: botName, serviceName, agentName" });
+        return;
+      }
+
+      if (body.botName) botConfigManager.setBotName(body.botName);
+      if (body.serviceName) botConfigManager.setServiceName(body.serviceName);
+      if (body.agentName) botConfigManager.setAgentName(body.agentName);
+
+      await botConfigManager.save();
+
+      // Regenerate CLAUDE.md from template
+      await botConfigManager.generateClaudeMd(process.cwd());
+
+      // Rebuild chat agent prompt with new bot name
+      if (body.botName && chatDeps?.chatAgent) {
+        chatDeps.chatAgent.rebuildPrompt(botConfigManager.getBotName());
+      }
+
+      // Update executor service name
+      if (body.serviceName && chatDeps?.executor) {
+        chatDeps.executor.setServiceName(botConfigManager.getServiceName());
+      }
+
+      auditLogger.log({
+        action: "bot_config_update",
+        ip: request.ip,
+        details: body,
+      });
+
+      return {
+        ok: true,
+        config: {
+          botName: botConfigManager.getBotName(),
+          serviceName: botConfigManager.getServiceName(),
+          agentName: botConfigManager.getAgentName(),
+        },
+      };
+    }
+  );
 
   // ── Login ──
   app.post("/api/admin/login", async (request, reply) => {
@@ -394,7 +451,8 @@ export async function registerAdminRoutes(
 
         let botRunning = false;
         try {
-          const status = execSync("systemctl is-active yetiforge", {
+          const svcName = botConfigManager?.getServiceName() || "yetiforge";
+          const status = execSync(`systemctl is-active ${svcName}`, {
             encoding: "utf-8",
           }).trim();
           botRunning = status === "active";
@@ -491,7 +549,7 @@ export async function registerAdminRoutes(
       return new Promise((resolve) => {
         // Use a small delay so the response can be sent before the process dies
         exec(
-          "sleep 1 && sudo systemctl restart yetiforge 2>&1",
+          `sleep 1 && sudo systemctl restart ${botConfigManager?.getServiceName() || "yetiforge"} 2>&1`,
           { encoding: "utf-8", timeout: 30000 },
           (err, stdout) => {
             if (err) {
@@ -1148,7 +1206,7 @@ export async function registerAdminRoutes(
       if (format === "text") {
         const lines = messages.map((m: WebChatMessage) => {
           const time = new Date(m.timestamp).toISOString();
-          const speaker = m.role === "user" ? "You" : m.role === "assistant" ? "YetiForge" : m.role;
+          const speaker = m.role === "user" ? "You" : m.role === "assistant" ? (botConfigManager?.getBotName() || "YetiForge") : m.role;
           return `[${time}] ${speaker}: ${m.text}`;
         });
         const text = lines.join("\n\n");

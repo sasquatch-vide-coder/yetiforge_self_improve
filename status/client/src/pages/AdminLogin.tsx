@@ -14,8 +14,19 @@ export function AdminLogin() {
   const [mfaCode, setMfaCode] = useState("");
   const [partialToken, setPartialToken] = useState<string | null>(null);
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [pwTouched, setPwTouched] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  const pwRules = [
+    { label: "Min 14 characters", test: (pw: string) => pw.length >= 14 },
+    { label: "At least 1 uppercase letter", test: (pw: string) => /[A-Z]/.test(pw) },
+    { label: "At least 1 lowercase letter", test: (pw: string) => /[a-z]/.test(pw) },
+    { label: "At least 1 number", test: (pw: string) => /[0-9]/.test(pw) },
+    { label: "At least 1 special character", test: (pw: string) => /[^A-Za-z0-9]/.test(pw) },
+  ];
+  const allRulesMet = pwRules.every((r) => r.test(password));
+  const passwordsMatch = password === confirmPassword && password.length > 0;
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -57,12 +68,12 @@ export function AdminLogin() {
   const handleSetup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (password !== confirmPassword) {
-      setError("Passwords do not match");
+    if (!allRulesMet) {
+      setError("Password does not meet all requirements");
       return;
     }
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters");
+    if (!passwordsMatch) {
+      setError("Passwords do not match");
       return;
     }
     setSubmitting(true);
@@ -137,9 +148,20 @@ export function AdminLogin() {
                     required
                     className="w-full brutal-border p-3 font-mono bg-brutal-bg"
                   />
-                  <p className="font-mono text-xs text-brutal-black/50 mt-1">
-                    Must be at least 8 characters
-                  </p>
+                  {password.length > 0 && (
+                    <div className="space-y-0.5 mt-1">
+                      {pwRules.map((rule, i) => (
+                        <div key={i} className="font-mono text-[10px] flex items-center gap-1">
+                          <span className={rule.test(password) ? "text-brutal-green" : "text-brutal-red"}>
+                            {rule.test(password) ? "✓" : "✗"}
+                          </span>
+                          <span className={rule.test(password) ? "text-brutal-green" : "text-brutal-black/50"}>
+                            {rule.label}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block font-mono text-xs uppercase font-bold mb-1">
@@ -148,14 +170,26 @@ export function AdminLogin() {
                   <input
                     type="password"
                     value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    onChange={(e) => {
+                      setConfirmPassword(e.target.value);
+                      setPwTouched(true);
+                    }}
                     required
                     className="w-full brutal-border p-3 font-mono bg-brutal-bg"
                   />
+                  {pwTouched && confirmPassword.length > 0 && (
+                    <div className="font-mono text-[10px] font-bold mt-1">
+                      {password === confirmPassword ? (
+                        <span className="text-brutal-green">✓ Passwords match</span>
+                      ) : (
+                        <span className="text-brutal-red">✗ Passwords do not match</span>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || !allRulesMet || !passwordsMatch}
                   className="w-full bg-brutal-yellow text-brutal-black font-bold uppercase py-3 brutal-border hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none brutal-shadow transition-all disabled:opacity-50"
                 >
                   {submitting ? "Creating Account..." : "Create Account"}

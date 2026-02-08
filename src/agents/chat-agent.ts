@@ -8,14 +8,25 @@ import { logger } from "../utils/logger.js";
 
 export class ChatAgent {
   private systemPrompt: string;
+  private personalityMd: string;
+  private botName: string;
 
   constructor(
     private config: Config,
     private agentConfig: AgentConfigManager,
     private sessionManager: SessionManager,
     personalityMd: string,
+    botName: string = "YETIFORGE",
   ) {
-    this.systemPrompt = buildChatSystemPrompt(personalityMd);
+    this.personalityMd = personalityMd;
+    this.botName = botName;
+    this.systemPrompt = buildChatSystemPrompt(personalityMd, botName);
+  }
+
+  /** Rebuild the system prompt with a new bot name. */
+  rebuildPrompt(botName: string): void {
+    this.botName = botName;
+    this.systemPrompt = buildChatSystemPrompt(this.personalityMd, botName);
   }
 
   async invoke(opts: {
@@ -66,7 +77,7 @@ export class ChatAgent {
     }
 
     // Parse response for action blocks and memory blocks
-    const parsed = parseChatResponse(result.result);
+    const parsed = parseChatResponse(result.result, this.botName);
 
     logger.info({
       chatId: opts.chatId,
@@ -94,9 +105,9 @@ interface ParsedChatResponse {
   memoryNote: string | null;
 }
 
-function parseChatResponse(text: string): ParsedChatResponse {
+function parseChatResponse(text: string, botName: string = "YETIFORGE"): ParsedChatResponse {
   const actionRegex = /<YETIFORGE_ACTION>([\s\S]*?)<\/YETIFORGE_ACTION>/;
-  const memoryRegex = /<YETIFORGE_MEMORY>([\s\S]*?)<\/YETIFORGE_MEMORY>/;
+  const memoryRegex = new RegExp(`<${botName}_MEMORY>([\\s\\S]*?)</${botName}_MEMORY>`);
 
   // Parse action block
   const actionMatch = text.match(actionRegex);

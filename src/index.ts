@@ -39,6 +39,9 @@ async function main() {
   const botConfig = new BotConfigManager(config.dataDir);
   await botConfig.load();
 
+  // Generate CLAUDE.md from template with current bot config
+  await botConfig.generateClaudeMd(process.cwd());
+
   // Pending response recovery — load any unsent responses from disk
   const pendingResponses = new PendingResponseManager(config.dataDir);
   pendingResponses.load();
@@ -67,8 +70,8 @@ async function main() {
   const personalityMd = await readFile(join(process.cwd(), "docs/personality.md"), "utf-8");
 
   // Create agents (uses singleton agentRegistry from agent-registry module)
-  const chatAgent = new ChatAgent(config, agentConfig, sessionManager, personalityMd);
-  const executor = new Executor(config, agentConfig, agentRegistry);
+  const chatAgent = new ChatAgent(config, agentConfig, sessionManager, personalityMd, botConfig.getBotName());
+  const executor = new Executor(config, agentConfig, agentRegistry, botConfig.getServiceName());
 
   // Attach task tracker to executor for crash recovery
   executor.setTaskTracker(activeTaskTracker);

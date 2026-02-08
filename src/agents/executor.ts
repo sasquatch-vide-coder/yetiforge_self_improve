@@ -73,13 +73,21 @@ function formatDuration(ms: number): string {
 export class Executor {
   private registry: AgentRegistry;
   private taskTracker: ActiveTaskTracker | null = null;
+  private serviceName: string;
 
   constructor(
     private config: Config,
     private agentConfig: AgentConfigManager,
     registry?: AgentRegistry,
+    serviceName: string = "yetiforge",
   ) {
     this.registry = registry || defaultRegistry;
+    this.serviceName = serviceName;
+  }
+
+  /** Update the service name used in system prompts and restart detection. */
+  setServiceName(name: string): void {
+    this.serviceName = name;
   }
 
   /** Attach the active task tracker for crash recovery. */
@@ -105,7 +113,7 @@ export class Executor {
     onInvocation?: (raw: any) => void;
   }): Promise<ExecutorResult> {
     const tierConfig = this.agentConfig.getConfig("executor");
-    const systemPrompt = buildExecutorSystemPrompt();
+    const systemPrompt = buildExecutorSystemPrompt(this.serviceName);
     const startTime = Date.now();
     const complexity = opts.complexity || "moderate";
 
@@ -712,7 +720,7 @@ export class Executor {
       });
 
       const durationMs = Date.now() - startTime;
-      const needsRestart = detectRestartNeed(result.result);
+      const needsRestart = detectRestartNeed(result.result, this.serviceName);
 
       return {
         success: !result.isError,
@@ -747,7 +755,7 @@ export class Executor {
         });
 
         const durationMs = Date.now() - startTime;
-        const needsRestart = detectRestartNeed(result.result);
+        const needsRestart = detectRestartNeed(result.result, this.serviceName);
 
         return {
           success: !result.isError,
@@ -763,11 +771,11 @@ export class Executor {
   }
 }
 
-function detectRestartNeed(output: string): boolean {
+function detectRestartNeed(output: string, serviceName: string = "yetiforge"): boolean {
   const lower = output.toLowerCase();
   const mentionsRestart = lower.includes("restart needed") ||
     lower.includes("service restart") ||
-    lower.includes("restart yetiforge") ||
+    lower.includes(`restart ${serviceName.toLowerCase()}`) ||
     lower.includes("note: service restart needed");
   return mentionsRestart;
 }

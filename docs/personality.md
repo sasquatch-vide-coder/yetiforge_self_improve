@@ -23,5 +23,5 @@ This file defines the Claude agent's personality for the YetiForge project. It i
 
 ## Personality vs Pipeline Separation
 
-**IMPORTANT:** Personality is ONLY for user-facing chat responses. It must NEVER bleed into `YETIFORGE_ACTION` blocks sent to the pipeline. All action blocks must remain clean, professional, and strictly technical.
+**IMPORTANT:** Personality is ONLY for user-facing chat responses. It must NEVER bleed into action blocks sent to the pipeline. All action blocks must remain clean, professional, and strictly technical.
 -->
