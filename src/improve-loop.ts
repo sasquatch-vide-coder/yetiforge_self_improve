@@ -185,6 +185,34 @@ function generateFileTree(rootDir: string): string {
   return lines.join("\n");
 }
 
+// ─── Progress Panel Helpers ──────────────────────────────────────────────────────
+
+const PANEL_UPDATE_INTERVAL_MS = 4000;
+
+/**
+ * Safe edit using raw bot API (no grammY ctx available in improve loop).
+ * Skips if text hasn't changed; falls back from Markdown to plain text.
+ */
+async function safeEditRaw(
+  api: any,
+  chatId: number,
+  messageId: number,
+  text: string,
+  lastText: { value: string },
+): Promise<void> {
+  if (text === lastText.value) return;
+  const truncated = text.length > 4096 ? text.slice(0, 4093) + "..." : text;
+  try {
+    await api.editMessageText(chatId, messageId, truncated, { parse_mode: "Markdown" });
+    lastText.value = text;
+  } catch {
+    try {
+      await api.editMessageText(chatId, messageId, truncated);
+      lastText.value = text;
+    } catch { /* identical text or deleted message — ignore */ }
+  }
+}
+
 // ─── Core Loop ──────────────────────────────────────────────────────────────────
 
 const CONSECUTIVE_FAILURE_LIMIT = 3;
@@ -251,8 +279,6 @@ export async function runImproveLoop(opts: {
       state.currentPhase = "executing";
       store.set(chatId, state);
 
-      await sendMsg(`Iteration ${iterNum}/${state.totalIterations} \u2014 Running...`);
-
       const historyText = compactHistory(state.history);
       const iterationPrompt = buildImproveIterationPrompt(
         serviceName,
@@ -264,13 +290,35 @@ export async function runImproveLoop(opts: {
       );
 
       let execResult;
+      let panelInterval: ReturnType<typeof setInterval> | null = null;
+      let progressMessageId: number | null = null;
+      const formatter = new StreamFormatter(`Improve #${iterNum}`);
+      const lastEditText = { value: "" };
+
       try {
         // Briefly mark idle so /cancel can fire, then re-mark busy
         chatLocks.setExecutorIdle(chatId);
         if (abortSignal.aborted) { state.status = "cancelled"; store.set(chatId, state); return; }
         chatLocks.setExecutorBusy(chatId);
 
-        const formatter = new StreamFormatter(`Improve #${iterNum}`);
+        // Send initial progress message and capture message_id for in-place editing
+        try {
+          const msg = await botApi.api.sendMessage(chatId, "\u2699\uFE0F Working \u2014 0s\n\nStarting up...");
+          progressMessageId = msg.message_id;
+        } catch (err) {
+          logger.warn({ chatId, err }, "Failed to send improve progress message");
+        }
+
+        // Set up 4s interval to edit the progress message with live panel
+        if (progressMessageId) {
+          panelInterval = setInterval(async () => {
+            if (!progressMessageId) return;
+            const panel = formatter.render();
+            if (panel) {
+              await safeEditRaw(botApi.api, chatId, progressMessageId, panel, lastEditText).catch(() => {});
+            }
+          }, PANEL_UPDATE_INTERVAL_MS);
+        }
 
         execResult = await executor.execute({
           chatId,
@@ -281,9 +329,31 @@ export async function runImproveLoop(opts: {
           cwd: state.projectDir,
           abortSignal,
           onStreamEvent: (event) => formatter.addEvent(event),
+          onStatusUpdate: async (update) => {
+            if (update.important) {
+              try {
+                await botApi.api.sendMessage(chatId, update.message, { parse_mode: "Markdown" });
+              } catch {
+                await botApi.api.sendMessage(chatId, update.message.replace(/[*_`]/g, "")).catch(() => {});
+              }
+            }
+          },
           onInvocation: (raw) => logInvocation(raw, chatId, "executor", invocationLogger),
         });
       } catch (err: any) {
+        // Clean up progress panel on error
+        if (panelInterval) clearInterval(panelInterval);
+        panelInterval = null;
+
+        // Render final error panel
+        if (progressMessageId) {
+          const errorPanel = formatter.eventCount > 0
+            ? formatter.renderForce().replace(/^⚙️ Working — .+/, `\u274C Failed — Iteration ${iterNum}`)
+            : `\u274C Failed — Iteration ${iterNum}`;
+          lastEditText.value = "";
+          await safeEditRaw(botApi.api, chatId, progressMessageId, errorPanel, lastEditText).catch(() => {});
+        }
+
         if (abortSignal.aborted) { state.status = "cancelled"; store.set(chatId, state); return; }
         logger.error({ chatId, iteration: iterNum, err }, "Improve loop iteration failed");
         consecutiveFailures++;
@@ -307,6 +377,25 @@ export async function runImproveLoop(opts: {
         await sendMsg(`Iteration ${iterNum} failed: ${err.message?.slice(0, 100)}`);
         await delay(INTER_ITERATION_DELAY_MS);
         continue;
+      }
+
+      // ── Clean up progress panel ──
+      if (panelInterval) clearInterval(panelInterval);
+
+      // Render final "Done" panel on the progress message
+      if (progressMessageId) {
+        const elapsed = Math.round(execResult.durationMs / 1000);
+        let finalPanel: string;
+        if (formatter.eventCount > 0) {
+          finalPanel = formatter.renderForce().replace(
+            /^⚙️ Working — .+/,
+            `\u2705 Done — ${elapsed}s`,
+          );
+        } else {
+          finalPanel = `\u2705 Done — ${elapsed}s\n\nNo tool activity captured.`;
+        }
+        lastEditText.value = "";
+        await safeEditRaw(botApi.api, chatId, progressMessageId, finalPanel, lastEditText).catch(() => {});
       }
 
       // ── Record result ──
