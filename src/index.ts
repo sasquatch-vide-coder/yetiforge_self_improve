@@ -20,7 +20,8 @@ import { WebhookManager } from "./webhook-manager.js";
 import { ActiveTaskTracker } from "./active-task-tracker.js";
 import { TaskQueue } from "./task-queue.js";
 import { PlanStore } from "./plan-store.js";
-import { setMessageBotApi } from "./handlers/message.js";
+import { ImproveLoopStore } from "./improve-loop.js";
+import { setMessageBotApi, setImproveLoopStore } from "./handlers/message.js";
 
 async function main() {
   const config = loadConfig();
@@ -71,6 +72,10 @@ async function main() {
   const planStore = new PlanStore(config.dataDir);
   planStore.load();
 
+  // Improve loop store — loop state survives restarts
+  const improveLoopStore = new ImproveLoopStore(config.dataDir);
+  improveLoopStore.load();
+
   // Load personality for chat agent
   const personalityMd = await readFile(join(process.cwd(), "docs/personality.md"), "utf-8");
 
@@ -85,11 +90,14 @@ async function main() {
     config, sessionManager, projectManager, invocationLogger,
     chatAgent, executor, agentConfig,
     pendingResponses, memoryManager, cronManager, webhookManager,
-    activeTaskTracker, taskQueue, planStore,
+    activeTaskTracker, taskQueue, planStore, improveLoopStore,
   );
 
   // Set bot API reference for queue-initiated tasks in message handler
   setMessageBotApi(bot);
+
+  // Set improve loop store for queue guard in message handler
+  setImproveLoopStore(improveLoopStore);
 
   // Wire cron trigger handler — runs work through the executor, sends results via Telegram
   cronManager.setTriggerHandler(async (job) => {
@@ -324,6 +332,32 @@ async function main() {
           }
         }
         // Don't auto-process — wait for user to /resume queue
+      }
+
+      // Detect interrupted improve loops — set to paused, notify user
+      const activeLoops = improveLoopStore.getAllActive();
+      if (activeLoops.length > 0) {
+        logger.warn({ count: activeLoops.length }, "Detected interrupted improve loops from previous run");
+        for (const loop of activeLoops) {
+          loop.status = "paused";
+          loop.pauseReason = "Process was interrupted";
+          loop.currentPhase = "idle";
+          improveLoopStore.set(loop.chatId, loop);
+
+          const msg = `\u26A0\uFE0F *Improve Loop Interrupted*\n\n` +
+            `Progress: ${loop.completedIterations}/${loop.totalIterations} iterations\n` +
+            `Use \`/improve resume\` to continue, or \`/improve cancel\` to discard.`;
+
+          try {
+            await bot.api.sendMessage(loop.chatId, msg, { parse_mode: "Markdown" });
+          } catch {
+            try {
+              await bot.api.sendMessage(loop.chatId, msg.replace(/[*`]/g, ""));
+            } catch (err2) {
+              logger.error({ err: err2, chatId: loop.chatId }, "Failed to send improve loop recovery notification");
+            }
+          }
+        }
       }
     },
   });

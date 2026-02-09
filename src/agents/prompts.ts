@@ -219,6 +219,68 @@ Produce a REVISED plan that addresses the user's feedback. Follow the same outpu
 }
 
 /**
+ * Builds the evaluator prompt for the improve loop's PLAN phase.
+ * This is a read-only planning prompt that decides what to improve next.
+ */
+export function buildImproveEvaluatorPrompt(
+  direction: string | null,
+  historyText: string,
+  iteration: number,
+  total: number,
+): string {
+  const focusSection = direction
+    ? `\n## Focus Direction\n\nThe user wants improvements focused on: **${direction}**\nStay on theme but pick the single most impactful improvement within this area.\n`
+    : `\n## Focus Direction\n\nNo specific direction given. Use your best judgment. Priority order:\n1. Bugs or broken functionality\n2. Performance issues\n3. Code quality / maintainability\n4. Missing features that would clearly help\n5. Documentation gaps\n`;
+
+  return `You are an evaluator for an autonomous self-improvement loop (iteration ${iteration}/${total}).
+
+## Your Job
+
+Review the codebase and pick ONE atomic improvement to make. Produce a concise, actionable plan.
+
+${focusSection}
+## Previous Iterations
+
+${historyText}
+
+## Rules
+
+1. Pick ONE improvement — small, focused, and completable in a single iteration.
+2. Do NOT repeat work from previous iterations.
+3. Do NOT propose changes to \`.env\`, \`data/\`, or the improve loop infrastructure itself (\`src/improve-loop.ts\`, the \`/improve\` command handler).
+4. Keep your plan under 1500 characters — this is one of many iterations, not a grand design doc.
+5. Be specific: name files, functions, and describe the exact change.
+6. The plan MUST include committing changes when done.
+7. Output your plan as a clear step-by-step list under a "## Plan" heading.`;
+}
+
+/**
+ * Builds the executor prompt for the improve loop's EXECUTE phase.
+ * Wraps the standard executor prompt with extra safety rails.
+ */
+export function buildImproveExecutorPrompt(
+  serviceName: string,
+  iteration: number,
+  total: number,
+): string {
+  const base = buildExecutorSystemPrompt(serviceName);
+  return `${base}
+
+## Improve Loop Context
+
+This is iteration ${iteration}/${total} of an autonomous self-improvement loop.
+
+## Additional Rules for Improve Loop
+
+1. MUST commit your changes with a descriptive message when done.
+2. MUST NOT modify \`.env\`, \`data/\`, or the improve loop infrastructure (\`src/improve-loop.ts\`).
+3. MUST NOT break existing functionality — if unsure, don't change it.
+4. MUST stop and report errors clearly if something goes wrong.
+5. Keep changes atomic — one focused improvement per iteration.
+6. Include a one-line summary of what you did as the FIRST line of your output.`;
+}
+
+/**
  * @deprecated No longer used — voicing calls were removed to reduce chat token usage.
  * Plan/result summaries are now template-formatted directly in message.ts.
  * Kept for reference; safe to remove in a future cleanup.

@@ -18,6 +18,7 @@ import { WebhookManager } from "./webhook-manager.js";
 import { ActiveTaskTracker } from "./active-task-tracker.js";
 import { TaskQueue } from "./task-queue.js";
 import { PlanStore } from "./plan-store.js";
+import { ImproveLoopStore } from "./improve-loop.js";
 import { logger } from "./utils/logger.js";
 
 export function createBot(
@@ -35,6 +36,7 @@ export function createBot(
   activeTaskTracker?: ActiveTaskTracker,
   taskQueue?: TaskQueue,
   planStore?: PlanStore,
+  improveLoopStore?: ImproveLoopStore,
 ): Bot {
   const bot = new Bot(config.telegramBotToken);
   const chatLocks = new ChatLocks();
@@ -55,6 +57,7 @@ export function createBot(
     bot, config, sessionManager, projectManager, chatLocks, agentConfig,
     executor, executor.getRegistry(),
     memoryManager, cronManager, webhookManager, chatAgent, activeTaskTracker, taskQueue,
+    improveLoopStore, invocationLogger,
   );
 
   // Default message handler

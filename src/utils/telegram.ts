@@ -62,6 +62,21 @@ export async function sendResponse(ctx: Context, text: string): Promise<void> {
   }
 }
 
+/**
+ * Send a (possibly long) message to a chat using the bot API directly.
+ * Splits into chunks and falls back from Markdown to plain text.
+ */
+export async function sendLongMessage(api: any, chatId: number, text: string): Promise<void> {
+  const chunks = splitMessage(text);
+  for (const chunk of chunks) {
+    try {
+      await api.sendMessage(chatId, chunk, { parse_mode: "Markdown" });
+    } catch {
+      await api.sendMessage(chatId, chunk).catch(() => {});
+    }
+  }
+}
+
 export async function editMessage(
   ctx: Context,
   messageId: number,

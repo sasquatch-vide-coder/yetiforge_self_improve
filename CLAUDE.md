@@ -101,6 +101,15 @@ The Claude agent working on this project follows the three rules above. They are
 Telegram messages → grammY bot (always running) → `claude -p` spawned per message → response sent back.
 Sessions are resumed via `--resume <sessionId>` for conversation continuity.
 
+### Improve Loop (`/improve`)
+- **Source**: `src/improve-loop.ts` (state, persistence, loop controller)
+- **Prompts**: `buildImproveEvaluatorPrompt()` + `buildImproveExecutorPrompt()` in `src/agents/prompts.ts`
+- **Command**: `/improve [count] [direction]` — autonomous plan-execute cycles
+- **Sub-commands**: `status`, `stop` (graceful), `cancel` (hard abort), `resume`
+- **Pattern**: Same as cron — calls `executor.plan()` then `executor.execute()` directly, no per-iteration approval
+- **Safety**: Cost circuit breaker ($10 default), consecutive failure pause (3), protected paths (.env, data/)
+- **Persistence**: `data/improve-loops.json` — survives restarts, interrupted loops auto-pause
+
 ### Status Page
 - **Server**: Fastify on port 3069 (`src/status/server.ts`), started alongside the bot
 - **Client**: React + Vite + Tailwind in `status/client/`

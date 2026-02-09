@@ -15,7 +15,12 @@ import { WebhookManager } from "../webhook-manager.js";
 import { ChatAgent } from "../agents/chat-agent.js";
 import { ActiveTaskTracker } from "../active-task-tracker.js";
 import { TaskQueue } from "../task-queue.js";
+import { ImproveLoopStore, ImproveLoopState, runImproveLoop } from "../improve-loop.js";
+import { InvocationLogger } from "../status/invocation-logger.js";
 import { startQueueProcessing } from "./message.js";
+
+// Module-level abort controllers for active improve loops, keyed by chatId
+const improveAbortControllers = new Map<number, AbortController>();
 
 export function registerCommands(
   bot: Bot,
@@ -32,6 +37,8 @@ export function registerCommands(
   chatAgent?: ChatAgent,
   activeTaskTracker?: ActiveTaskTracker,
   taskQueue?: TaskQueue,
+  improveLoopStore?: ImproveLoopStore,
+  invocationLogger?: InvocationLogger,
 ): void {
   bot.command("start", (ctx) => {
     ctx.reply(
@@ -43,6 +50,7 @@ export function registerCommands(
       "/cancel - Abort current request\n" +
       "/queue - View/manage task queue\n" +
       "/resume - Resume interrupted tasks\n" +
+      "/improve - Autonomous self-improvement loop\n" +
       "/model - Show agent model config\n" +
       "/project - Manage projects\n" +
       "/git - Git operations\n" +
@@ -66,6 +74,7 @@ export function registerCommands(
       "/git status|commit|push|pr - Git operations\n" +
       "/memory list|add|remove|clear - Persistent memory\n" +
       "/compact - Summarize & clear session\n" +
+      "/improve [N] [direction] - Self-improvement loop\n" +
       "/cron list|add|remove|run|enable|disable - Scheduled tasks\n" +
       "/webhook list|create|remove - Webhook triggers\n\n" +
       "Just send a text message to chat with Claude.",
@@ -128,11 +137,231 @@ export function registerCommands(
 
   bot.command("cancel", (ctx) => {
     const chatId = ctx.chat.id;
+
+    // Hard-cancel an active improve loop
+    const loopAbort = improveAbortControllers.get(chatId);
+    if (loopAbort && improveLoopStore?.hasActive(chatId)) {
+      loopAbort.abort();
+      const state = improveLoopStore.get(chatId);
+      if (state) {
+        state.status = "cancelled";
+        improveLoopStore.set(chatId, state);
+      }
+      improveAbortControllers.delete(chatId);
+      chatLocks.setExecutorIdle(chatId);
+      ctx.reply("Improve loop cancelled.");
+      return;
+    }
+
     if (chatLocks.cancel(chatId)) {
       ctx.reply("Request cancelled.");
     } else {
       ctx.reply("Nothing to cancel.");
     }
+  });
+
+  // ── /improve command ──
+  bot.command("improve", async (ctx) => {
+    const chatId = ctx.chat.id;
+
+    if (!executor || !improveLoopStore || !invocationLogger) {
+      await ctx.reply("Improve loop system is not available.");
+      return;
+    }
+
+    const args = (ctx.match as string || "").trim();
+    const parts = args.split(/\s+/);
+    const subcommand = parts[0]?.toLowerCase();
+
+    // ── /improve status ──
+    if (subcommand === "status") {
+      const state = improveLoopStore.get(chatId);
+      if (!state) {
+        await ctx.reply("No improve loop found for this chat.");
+        return;
+      }
+
+      const elapsed = formatAge(state.startedAt);
+      const cost = state.totalCostUsd.toFixed(4);
+      const lines = [
+        `*Improve Loop Status:*`,
+        `Status: ${state.status}`,
+        `Progress: ${state.completedIterations}/${state.totalIterations}`,
+        `Phase: ${state.currentPhase}`,
+        `Cost: $${cost}`,
+        `Running: ${elapsed}`,
+      ];
+      if (state.direction) lines.push(`Direction: ${state.direction}`);
+      if (state.pauseReason) lines.push(`Pause reason: ${state.pauseReason}`);
+
+      if (state.history.length > 0) {
+        lines.push("");
+        lines.push("*Recent iterations:*");
+        const recent = state.history.slice(-5);
+        for (const h of recent) {
+          const icon = h.success ? "\u2705" : "\u274C";
+          lines.push(`${icon} #${h.iteration}: ${h.summary.slice(0, 80)}`);
+        }
+      }
+
+      await ctx.reply(lines.join("\n"), { parse_mode: "Markdown" });
+      return;
+    }
+
+    // ── /improve stop (graceful) ──
+    if (subcommand === "stop") {
+      const state = improveLoopStore.get(chatId);
+      if (!state || !improveLoopStore.hasActive(chatId)) {
+        await ctx.reply("No active improve loop to stop.");
+        return;
+      }
+
+      state.status = "stopping";
+      improveLoopStore.set(chatId, state);
+      await ctx.reply("Improve loop will stop after the current iteration finishes.");
+      return;
+    }
+
+    // ── /improve cancel (hard) ──
+    if (subcommand === "cancel") {
+      const loopAbort = improveAbortControllers.get(chatId);
+      if (!loopAbort || !improveLoopStore.hasActive(chatId)) {
+        await ctx.reply("No active improve loop to cancel.");
+        return;
+      }
+
+      loopAbort.abort();
+      const state = improveLoopStore.get(chatId);
+      if (state) {
+        state.status = "cancelled";
+        improveLoopStore.set(chatId, state);
+      }
+      improveAbortControllers.delete(chatId);
+      chatLocks.setExecutorIdle(chatId);
+      await ctx.reply("Improve loop cancelled immediately.");
+      return;
+    }
+
+    // ── /improve resume ──
+    if (subcommand === "resume") {
+      const state = improveLoopStore.get(chatId);
+      if (!state) {
+        await ctx.reply("No improve loop to resume.");
+        return;
+      }
+
+      if (state.status !== "paused" && state.status !== "stopped") {
+        await ctx.reply(`Loop status is "${state.status}" \u2014 can only resume paused or stopped loops.`);
+        return;
+      }
+
+      if (chatLocks.isExecutorBusy(chatId)) {
+        await ctx.reply("Executor is busy. Wait for it to finish before resuming.");
+        return;
+      }
+
+      state.status = "running";
+      state.pauseReason = null;
+      improveLoopStore.set(chatId, state);
+
+      const abortController = new AbortController();
+      improveAbortControllers.set(chatId, abortController);
+      chatLocks.setExecutorBusy(chatId);
+
+      await ctx.reply(`Resuming improve loop from iteration ${state.completedIterations + 1}/${state.totalIterations}...`);
+
+      runImproveLoop({
+        state,
+        store: improveLoopStore,
+        executor,
+        invocationLogger,
+        chatLocks,
+        botApi: ctx.api ? { api: ctx.api } : (ctx as any),
+        abortSignal: abortController.signal,
+        serviceName: "yetiforge",
+      }).catch((err) => {
+        logger.error({ chatId, err }, "Improve loop resume failed");
+        ctx.reply(`Improve loop failed: ${err.message}`).catch(() => {});
+      }).finally(() => {
+        improveAbortControllers.delete(chatId);
+      });
+      return;
+    }
+
+    // ── /improve [count] [direction] — start a new loop ──
+    if (improveLoopStore.hasActive(chatId)) {
+      await ctx.reply("An improve loop is already running. Use /improve stop or /improve cancel first.");
+      return;
+    }
+
+    if (chatLocks.isExecutorBusy(chatId)) {
+      await ctx.reply("Executor is busy. Wait for it to finish first.");
+      return;
+    }
+
+    // Parse count and direction
+    let count = 1;
+    let direction: string | null = null;
+
+    if (args) {
+      const firstPart = parts[0];
+      const num = parseInt(firstPart, 10);
+
+      if (!isNaN(num) && num > 0) {
+        count = Math.min(num, 50); // Cap at 50 iterations
+        direction = parts.slice(1).join(" ").trim() || null;
+      } else {
+        // First word is not a number — entire args is the direction, count=1
+        direction = args;
+      }
+    }
+
+    if (count < 1) {
+      await ctx.reply("Invalid iteration count. Use a positive number.");
+      return;
+    }
+
+    const projectDir = projectManager.getActiveProjectDir(chatId) || config.defaultProjectDir;
+
+    const state: ImproveLoopState = {
+      chatId,
+      direction,
+      totalIterations: count,
+      completedIterations: 0,
+      status: "running",
+      projectDir,
+      history: [],
+      totalCostUsd: 0,
+      startedAt: Date.now(),
+      currentPhase: "idle",
+      pauseReason: null,
+      maxCostUsd: 10,
+    };
+
+    improveLoopStore.set(chatId, state);
+
+    const abortController = new AbortController();
+    improveAbortControllers.set(chatId, abortController);
+    chatLocks.setExecutorBusy(chatId);
+
+    const dirLabel = direction ? ` (focus: ${direction})` : "";
+    await ctx.reply(`Starting improve loop: ${count} iteration(s)${dirLabel}\n\nUse /improve stop for graceful stop, /improve cancel to abort.`);
+
+    runImproveLoop({
+      state,
+      store: improveLoopStore,
+      executor,
+      invocationLogger,
+      chatLocks,
+      botApi: ctx.api ? { api: ctx.api } : (ctx as any),
+      abortSignal: abortController.signal,
+      serviceName: "yetiforge",
+    }).catch((err) => {
+      logger.error({ chatId, err }, "Improve loop failed");
+      ctx.reply(`Improve loop failed: ${err.message}`).catch(() => {});
+    }).finally(() => {
+      improveAbortControllers.delete(chatId);
+    });
   });
 
   // ── /queue command ──

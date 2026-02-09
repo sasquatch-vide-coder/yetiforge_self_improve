@@ -11,6 +11,7 @@ import { PendingResponseManager } from "../pending-responses.js";
 import { MemoryManager } from "../memory-manager.js";
 import { TaskQueue } from "../task-queue.js";
 import { PlanStore } from "../plan-store.js";
+import { ImproveLoopStore } from "../improve-loop.js";
 import { startTypingIndicator, sendResponse, editMessage, safeEditMessage } from "../utils/telegram.js";
 import { StreamFormatter } from "../utils/stream-formatter.js";
 import { logger } from "../utils/logger.js";
@@ -29,6 +30,14 @@ let _bot: any = null; // Bot API for sending messages to chats without ctx
 
 /** Plan store — injected from index.ts for disk persistence, fallback to in-memory */
 let _planStore: PlanStore = new PlanStore();
+
+/** Improve loop store — injected from index.ts */
+let _improveLoopStore: ImproveLoopStore | null = null;
+
+/** Set the improve loop store reference. */
+export function setImproveLoopStore(store: ImproveLoopStore): void {
+  _improveLoopStore = store;
+}
 
 /** Set the bot API reference for queue-initiated tasks that don't have a ctx. */
 export function setMessageBotApi(botApi: any): void {
@@ -707,6 +716,9 @@ export async function startQueueProcessing(chatId: number, chatLocks: ChatLocks)
  */
 async function processNextQueuedTask(chatId: number, chatLocks: ChatLocks): Promise<void> {
   if (!_taskQueue || !_executor || !_chatAgent || !_invocationLogger || !_bot) return;
+
+  // Don't auto-start queued tasks while an improve loop owns the executor
+  if (_improveLoopStore?.hasActive(chatId)) return;
 
   const nextTask = _taskQueue.dequeue(chatId);
   if (!nextTask) return;
