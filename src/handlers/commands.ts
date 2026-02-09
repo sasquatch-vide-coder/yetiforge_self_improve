@@ -335,7 +335,6 @@ export function registerCommands(
       startedAt: Date.now(),
       currentPhase: "idle",
       pauseReason: null,
-      maxCostUsd: 10,
     };
 
     improveLoopStore.set(chatId, state);

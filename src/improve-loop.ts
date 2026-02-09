@@ -40,7 +40,6 @@ export interface ImproveLoopState {
   startedAt: number;
   currentPhase: "planning" | "executing" | "idle";
   pauseReason: string | null;
-  maxCostUsd: number;
 }
 
 // ─── ImproveLoopStore ───────────────────────────────────────────────────────────
@@ -256,15 +255,6 @@ export async function runImproveLoop(opts: {
         state.status = "stopped";
         store.set(chatId, state);
         await sendMsg(buildSummary(state, "Stopped gracefully"));
-        return;
-      }
-
-      // ── Cost circuit breaker ──
-      if (state.totalCostUsd >= state.maxCostUsd) {
-        state.status = "paused";
-        state.pauseReason = `Cost limit reached ($${state.totalCostUsd.toFixed(2)} / $${state.maxCostUsd.toFixed(2)})`;
-        store.set(chatId, state);
-        await sendMsg(`Improve loop paused: ${state.pauseReason}\n\nUse /improve resume to continue.`);
         return;
       }
 
