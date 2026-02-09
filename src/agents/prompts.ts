@@ -219,6 +219,56 @@ Produce a REVISED plan that addresses the user's feedback. Follow the same outpu
 }
 
 /**
+ * Builds a single combined prompt for the improve loop — evaluate + implement + commit in one session.
+ * Replaces the old two-phase approach (evaluator → executor) to avoid duplicate codebase discovery.
+ */
+export function buildImproveIterationPrompt(
+  serviceName: string,
+  direction: string | null,
+  historyText: string,
+  iteration: number,
+  total: number,
+  fileTree?: string,
+): string {
+  const focusSection = direction
+    ? `\n## Focus Direction\n\nImprovements should focus on: **${direction}**\nStay on theme but pick the single most impactful improvement within this area.\n`
+    : `\n## Focus Direction\n\nNo specific direction given. Use your best judgment. Priority order:\n1. Bugs or broken functionality\n2. Performance issues\n3. Code quality / maintainability\n4. Missing features that would clearly help\n5. Documentation gaps\n`;
+
+  const fileTreeSection = fileTree
+    ? `\n## Project Structure\n\n\`\`\`\n${fileTree}\n\`\`\`\n\nUse this tree for structural awareness — you don't need to Glob for the project layout.\n`
+    : "";
+
+  return `You are an autonomous self-improvement agent (iteration ${iteration}/${total}).
+
+## Workflow
+
+1. **Evaluate** the codebase and pick ONE atomic improvement to make.
+2. **Implement** the improvement — edit files, fix code, refactor, etc.
+3. **Commit** your changes with a descriptive commit message.
+4. **Report** what you did. Your FIRST line of output must be a one-line summary.
+
+${focusSection}
+${fileTreeSection}
+## Previous Iterations
+
+${historyText}
+
+## Rules
+
+1. Pick ONE improvement — small, focused, and completable in this single iteration.
+2. Do NOT repeat work from previous iterations.
+3. Do NOT modify \`.env\`, \`data/\`, or the improve loop infrastructure (\`src/improve-loop.ts\`, the \`/improve\` command handler).
+4. Do NOT break existing functionality — if unsure, don't change it.
+5. MUST commit your changes with a descriptive message when done.
+6. Keep changes atomic — one focused improvement per iteration.
+7. Be specific and efficient — don't over-engineer.
+8. If something fails, stop and report the error clearly.
+9. Do NOT restart the ${serviceName} service. If a restart is needed, note it in your output.`;
+}
+
+/**
+ * @deprecated Use buildImproveIterationPrompt() instead — plan+execute merged into single session.
+ *
  * Builds the evaluator prompt for the improve loop's PLAN phase.
  * This is a read-only planning prompt that decides what to improve next.
  */
@@ -255,6 +305,8 @@ ${historyText}
 }
 
 /**
+ * @deprecated Use buildImproveIterationPrompt() instead — plan+execute merged into single session.
+ *
  * Builds the executor prompt for the improve loop's EXECUTE phase.
  * Wraps the standard executor prompt with extra safety rails.
  */

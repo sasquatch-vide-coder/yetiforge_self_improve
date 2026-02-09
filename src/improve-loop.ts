@@ -1,21 +1,21 @@
 /**
- * Self-improvement loop — autonomous plan-execute cycles.
+ * Self-improvement loop — autonomous evaluate-implement-commit cycles.
  *
  * `/improve [count] [direction]` launches a loop that runs N iterations,
- * each consisting of:  plan (evaluator picks an improvement) -> execute -> commit.
+ * each using a single CLI session to: evaluate the codebase, pick an improvement,
+ * implement it, and commit — all in one pass.
  *
  * The `/improve` command IS the blanket approval — no per-iteration user confirmation.
- * Same pattern as the cron trigger handler: executor.plan() then executor.execute() directly.
  */
 
-import { readFileSync, writeFileSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from "fs";
 import { join, dirname } from "path";
 import { Executor } from "./agents/executor.js";
 import { InvocationLogger } from "./status/invocation-logger.js";
 import { ChatLocks } from "./middleware/rate-limit.js";
 import { StreamFormatter } from "./utils/stream-formatter.js";
 import { sendLongMessage } from "./utils/telegram.js";
-import { buildImproveEvaluatorPrompt, buildImproveExecutorPrompt } from "./agents/prompts.js";
+import { buildImproveIterationPrompt } from "./agents/prompts.js";
 import { logger } from "./utils/logger.js";
 
 // ─── State Types ────────────────────────────────────────────────────────────────
@@ -134,6 +134,57 @@ function compactHistory(history: ImproveIterationRecord[]): string {
   return lines.join("\n");
 }
 
+// ─── File Tree Generator ────────────────────────────────────────────────────────
+
+const FILE_TREE_SKIP = new Set(["node_modules", "dist", ".git", "data"]);
+const FILE_TREE_SKIP_EXT = new Set([".log"]);
+const FILE_TREE_MAX_DEPTH = 4;
+const FILE_TREE_MAX_ENTRIES = 200;
+
+function generateFileTree(rootDir: string): string {
+  const lines: string[] = [];
+  let count = 0;
+
+  function walk(dir: string, prefix: string, depth: number): void {
+    if (depth > FILE_TREE_MAX_DEPTH || count >= FILE_TREE_MAX_ENTRIES) return;
+
+    let entries: string[];
+    try {
+      entries = readdirSync(dir).sort();
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      if (count >= FILE_TREE_MAX_ENTRIES) {
+        lines.push(`${prefix}... (truncated)`);
+        return;
+      }
+
+      if (FILE_TREE_SKIP.has(entry) || entry.startsWith(".env")) continue;
+      if (FILE_TREE_SKIP_EXT.has(entry.slice(entry.lastIndexOf(".")))) continue;
+
+      const fullPath = join(dir, entry);
+      let isDir = false;
+      try {
+        isDir = statSync(fullPath).isDirectory();
+      } catch {
+        continue;
+      }
+
+      lines.push(`${prefix}${entry}${isDir ? "/" : ""}`);
+      count++;
+
+      if (isDir) {
+        walk(fullPath, prefix + "  ", depth + 1);
+      }
+    }
+  }
+
+  walk(rootDir, "", 0);
+  return lines.join("\n");
+}
+
 // ─── Core Loop ──────────────────────────────────────────────────────────────────
 
 const CONSECUTIVE_FAILURE_LIMIT = 3;
@@ -161,6 +212,7 @@ export async function runImproveLoop(opts: {
   };
 
   let consecutiveFailures = 0;
+  let fileTree: string | undefined;
 
   try {
     for (let i = state.completedIterations; i < state.totalIterations; i++) {
@@ -190,44 +242,54 @@ export async function runImproveLoop(opts: {
 
       const iterNum = i + 1;
 
-      // ── PLAN PHASE ──
-      state.currentPhase = "planning";
+      // ── Refresh file tree every 5 iterations ──
+      if (iterNum === 1 || iterNum % 5 === 0) {
+        fileTree = generateFileTree(state.projectDir);
+      }
+
+      // ── EXECUTE (single session: evaluate → implement → commit) ──
+      state.currentPhase = "executing";
       store.set(chatId, state);
 
-      await sendMsg(`Iteration ${iterNum}/${state.totalIterations} \u2014 Planning...`);
+      await sendMsg(`Iteration ${iterNum}/${state.totalIterations} \u2014 Running...`);
 
       const historyText = compactHistory(state.history);
-      const evaluatorPrompt = buildImproveEvaluatorPrompt(
+      const iterationPrompt = buildImproveIterationPrompt(
+        serviceName,
         state.direction,
         historyText,
         iterNum,
         state.totalIterations,
+        fileTree,
       );
 
-      let planResult;
+      let execResult;
       try {
         // Briefly mark idle so /cancel can fire, then re-mark busy
         chatLocks.setExecutorIdle(chatId);
         if (abortSignal.aborted) { state.status = "cancelled"; store.set(chatId, state); return; }
         chatLocks.setExecutorBusy(chatId);
 
-        planResult = await executor.plan({
+        const formatter = new StreamFormatter(`Improve #${iterNum}`);
+
+        execResult = await executor.execute({
           chatId,
-          task: evaluatorPrompt,
-          context: "",
+          task: iterationPrompt,
+          context: `Improve loop iteration ${iterNum}/${state.totalIterations}`,
           complexity: "moderate",
           rawMessage: `[improve loop iteration ${iterNum}/${state.totalIterations}]`,
           cwd: state.projectDir,
           abortSignal,
-          onInvocation: (raw) => logInvocation(raw, chatId, "executor-plan", invocationLogger),
+          onStreamEvent: (event) => formatter.addEvent(event),
+          onInvocation: (raw) => logInvocation(raw, chatId, "executor", invocationLogger),
         });
       } catch (err: any) {
         if (abortSignal.aborted) { state.status = "cancelled"; store.set(chatId, state); return; }
-        logger.error({ chatId, iteration: iterNum, err }, "Improve loop plan failed");
+        logger.error({ chatId, iteration: iterNum, err }, "Improve loop iteration failed");
         consecutiveFailures++;
         state.history.push({
           iteration: iterNum,
-          summary: `Plan failed: ${err.message?.slice(0, 100)}`,
+          summary: `Failed: ${err.message?.slice(0, 100)}`,
           success: false,
           costUsd: 0,
           durationMs: 0,
@@ -242,71 +304,12 @@ export async function runImproveLoop(opts: {
           await sendMsg(`Improve loop paused: ${state.pauseReason}\n\nUse /improve resume to continue.`);
           return;
         }
-        await sendMsg(`Iteration ${iterNum} plan failed: ${err.message?.slice(0, 100)}`);
-        await delay(INTER_ITERATION_DELAY_MS);
-        continue;
-      }
-
-      state.totalCostUsd += planResult.costUsd;
-
-      // ── EXECUTE PHASE ──
-      state.currentPhase = "executing";
-      store.set(chatId, state);
-
-      const executorSystemPrompt = buildImproveExecutorPrompt(serviceName, iterNum, state.totalIterations);
-
-      // Build the execution task with the plan baked in
-      const execTask = `${executorSystemPrompt}\n\n## Plan from Evaluator\n\n${planResult.planText}`;
-
-      let execResult;
-      try {
-        // Briefly mark idle so /cancel can fire, then re-mark busy
-        chatLocks.setExecutorIdle(chatId);
-        if (abortSignal.aborted) { state.status = "cancelled"; store.set(chatId, state); return; }
-        chatLocks.setExecutorBusy(chatId);
-
-        const formatter = new StreamFormatter(`Improve #${iterNum}`);
-
-        execResult = await executor.execute({
-          chatId,
-          task: execTask,
-          context: `Improve loop iteration ${iterNum}/${state.totalIterations}`,
-          complexity: "moderate",
-          rawMessage: `[improve loop iteration ${iterNum}/${state.totalIterations}]`,
-          cwd: state.projectDir,
-          abortSignal,
-          onStreamEvent: (event) => formatter.addEvent(event),
-          onInvocation: (raw) => logInvocation(raw, chatId, "executor", invocationLogger),
-        });
-      } catch (err: any) {
-        if (abortSignal.aborted) { state.status = "cancelled"; store.set(chatId, state); return; }
-        logger.error({ chatId, iteration: iterNum, err }, "Improve loop execute failed");
-        consecutiveFailures++;
-        state.history.push({
-          iteration: iterNum,
-          summary: `Execute failed: ${err.message?.slice(0, 100)}`,
-          success: false,
-          costUsd: planResult.costUsd,
-          durationMs: planResult.durationMs,
-        });
-        state.completedIterations = iterNum;
-        store.set(chatId, state);
-
-        if (consecutiveFailures >= CONSECUTIVE_FAILURE_LIMIT) {
-          state.status = "paused";
-          state.pauseReason = `${CONSECUTIVE_FAILURE_LIMIT} consecutive failures`;
-          store.set(chatId, state);
-          await sendMsg(`Improve loop paused: ${state.pauseReason}\n\nUse /improve resume to continue.`);
-          return;
-        }
-        await sendMsg(`Iteration ${iterNum} execute failed: ${err.message?.slice(0, 100)}`);
+        await sendMsg(`Iteration ${iterNum} failed: ${err.message?.slice(0, 100)}`);
         await delay(INTER_ITERATION_DELAY_MS);
         continue;
       }
 
       // ── Record result ──
-      const totalIterCost = planResult.costUsd + execResult.costUsd;
-      const totalIterDuration = planResult.durationMs + execResult.durationMs;
       state.totalCostUsd += execResult.costUsd;
 
       // Extract a one-line summary from the result (first non-empty line or truncated)
@@ -316,8 +319,8 @@ export async function runImproveLoop(opts: {
         iteration: iterNum,
         summary,
         success: execResult.success,
-        costUsd: totalIterCost,
-        durationMs: totalIterDuration,
+        costUsd: execResult.costUsd,
+        durationMs: execResult.durationMs,
       });
       state.completedIterations = iterNum;
       state.currentPhase = "idle";
@@ -330,8 +333,8 @@ export async function runImproveLoop(opts: {
       }
 
       const icon = execResult.success ? "\u2705" : "\u274C";
-      const durSec = Math.round(totalIterDuration / 1000);
-      const cost = totalIterCost.toFixed(4);
+      const durSec = Math.round(execResult.durationMs / 1000);
+      const cost = execResult.costUsd.toFixed(4);
       await sendMsg(`${icon} Iteration ${iterNum}/${state.totalIterations} (${durSec}s, $${cost})\n${summary}`);
 
       if (consecutiveFailures >= CONSECUTIVE_FAILURE_LIMIT) {
