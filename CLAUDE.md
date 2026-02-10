@@ -83,6 +83,13 @@ The Claude agent working on this project follows the three rules above. They are
 - Update this CLAUDE.md when architecture changes
 - Keep context windows small by using sub-agents for heavy lifting
 
+### Autonomous Issue Resolution
+- When a user reports a bug or issue, the executor MUST attempt to reproduce, diagnose, and fix it entirely on its own — do not ask the user to manually test or verify
+- Use any available tools to investigate: Puppeteer, headless browsers, curl, network utilities, log inspection, file reads, etc.
+- After applying a fix, verify it worked by testing autonomously (run the server, hit the endpoint, check the output — whatever it takes)
+- Only ask the user for manual help when genuinely blocked — e.g., needs physical console access, sudo on the VPS, credentials not available to the agent
+- "I can't test this" is not acceptable — find a way. There is almost always a way to verify from the CLI
+
 ## Tech Stack
 - TypeScript ES modules, Node.js v22+
 - grammY for Telegram
