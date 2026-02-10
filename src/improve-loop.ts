@@ -13,9 +13,9 @@ import { join, dirname } from "path";
 import { Executor } from "./agents/executor.js";
 import { InvocationLogger } from "./status/invocation-logger.js";
 import { ChatLocks } from "./middleware/rate-limit.js";
-import { StreamFormatter } from "./utils/stream-formatter.js";
+import { StreamFormatter, FinalSummaryData } from "./utils/stream-formatter.js";
 import { sendLongMessage } from "./utils/telegram.js";
-import { buildImproveIterationPrompt } from "./agents/prompts.js";
+import { buildImproveIterationPrompt, buildImproveStrategicPlanPrompt } from "./agents/prompts.js";
 import { logger } from "./utils/logger.js";
 
 // ─── State Types ────────────────────────────────────────────────────────────────
@@ -40,6 +40,9 @@ export interface ImproveLoopState {
   startedAt: number;
   currentPhase: "planning" | "executing" | "idle";
   pauseReason: string | null;
+  batchSize: number;
+  strategicPlan: string | null;
+  strategicPlanCostUsd: number;
 }
 
 // ─── ImproveLoopStore ───────────────────────────────────────────────────────────
@@ -212,6 +215,103 @@ async function safeEditRaw(
   }
 }
 
+// ─── Batch Planning ─────────────────────────────────────────────────────────────
+
+async function planBatch(opts: {
+  state: ImproveLoopState;
+  store: ImproveLoopStore;
+  executor: Executor;
+  invocationLogger: InvocationLogger;
+  chatLocks: ChatLocks;
+  botApi: any;
+  abortSignal: AbortSignal;
+  serviceName: string;
+  batchItemCount: number;
+  fileTree?: string;
+}): Promise<{ plan: string; costUsd: number } | null> {
+  const { state, store, executor, invocationLogger, chatLocks, botApi, abortSignal, serviceName, batchItemCount, fileTree } = opts;
+  const chatId = state.chatId;
+
+  state.currentPhase = "planning";
+  store.set(chatId, state);
+
+  const planPrompt = buildImproveStrategicPlanPrompt(serviceName, state.direction, batchItemCount, fileTree);
+
+  // Send a progress message for planning
+  let progressMessageId: number | null = null;
+  const formatter = new StreamFormatter(`\uD83D\uDCCB Planning batch (${batchItemCount} items)`);
+  const lastEditText = { value: "" };
+
+  try {
+    const msg = await botApi.api.sendMessage(chatId, `\uD83D\uDCCB Planning batch of ${batchItemCount} improvements...`);
+    progressMessageId = msg.message_id;
+  } catch (err) {
+    logger.warn({ chatId, err }, "Failed to send batch planning progress message");
+  }
+
+  let panelInterval: ReturnType<typeof setInterval> | null = null;
+  if (progressMessageId) {
+    panelInterval = setInterval(async () => {
+      if (!progressMessageId) return;
+      const panel = formatter.render();
+      if (panel) {
+        await safeEditRaw(botApi.api, chatId, progressMessageId, panel, lastEditText).catch(() => {});
+      }
+    }, PANEL_UPDATE_INTERVAL_MS);
+  }
+
+  try {
+    // Briefly mark idle so /cancel can fire, then re-mark busy
+    chatLocks.setExecutorIdle(chatId);
+    if (abortSignal.aborted) return null;
+    chatLocks.setExecutorBusy(chatId);
+
+    const planResult = await executor.plan({
+      chatId,
+      task: planPrompt,
+      context: `Strategic planning for batch of ${batchItemCount} improvements`,
+      complexity: "moderate",
+      rawMessage: `[improve loop strategic planning]`,
+      cwd: state.projectDir,
+      abortSignal,
+      onStreamEvent: (event) => formatter.addEvent(event),
+      onInvocation: (raw) => {
+        logInvocation(raw, chatId, "executor-plan", invocationLogger);
+      },
+    });
+
+    if (panelInterval) clearInterval(panelInterval);
+
+    // Update progress message with final result
+    if (progressMessageId) {
+      const finalPanel = formatter.renderFinalSummary({
+        costUsd: planResult.costUsd,
+        durationMs: planResult.durationMs,
+        success: true,
+      });
+      lastEditText.value = "";
+      await safeEditRaw(botApi.api, chatId, progressMessageId, finalPanel, lastEditText).catch(() => {});
+    }
+
+    return { plan: planResult.planText, costUsd: planResult.costUsd };
+  } catch (err: any) {
+    if (panelInterval) clearInterval(panelInterval);
+
+    if (progressMessageId) {
+      const errorPanel = formatter.renderFinalSummary({
+        costUsd: 0,
+        durationMs: 0,
+        success: false,
+      });
+      lastEditText.value = "";
+      await safeEditRaw(botApi.api, chatId, progressMessageId, errorPanel, lastEditText).catch(() => {});
+    }
+
+    logger.error({ chatId, err }, "Batch strategic planning failed");
+    return null;
+  }
+}
+
 // ─── Core Loop ──────────────────────────────────────────────────────────────────
 
 const CONSECUTIVE_FAILURE_LIMIT = 3;
@@ -240,9 +340,11 @@ export async function runImproveLoop(opts: {
 
   let consecutiveFailures = 0;
   let fileTree: string | undefined;
+  const batchSize = state.batchSize;
+  const skipPlanning = state.totalIterations <= 1;
 
   try {
-    for (let i = state.completedIterations; i < state.totalIterations; i++) {
+    for (let i = state.completedIterations; i < state.totalIterations; ) {
       // ── Check cancellation / stopping ──
       if (abortSignal.aborted || state.status === "cancelled") {
         state.status = "cancelled";
@@ -258,104 +360,243 @@ export async function runImproveLoop(opts: {
         return;
       }
 
-      const iterNum = i + 1;
+      // ── Determine batch boundaries ──
+      const remaining = state.totalIterations - i;
+      const batchItemCount = Math.min(batchSize, remaining);
 
-      // ── Refresh file tree every 5 iterations ──
-      if (iterNum === 1 || iterNum % 5 === 0) {
+      // ── Batch Planning Phase ──
+      // Skip planning for single-iteration runs or if already have a plan for this batch
+      const needsPlan = !skipPlanning && !state.strategicPlan;
+
+      if (needsPlan) {
+        // Refresh file tree for planning
         fileTree = generateFileTree(state.projectDir);
+
+        const planResult = await planBatch({
+          state, store, executor, invocationLogger, chatLocks,
+          botApi, abortSignal, serviceName, batchItemCount, fileTree,
+        });
+
+        if (abortSignal.aborted || (state.status as string) === "cancelled") {
+          state.status = "cancelled";
+          store.set(chatId, state);
+          return;
+        }
+
+        if (planResult) {
+          state.strategicPlan = planResult.plan;
+          state.strategicPlanCostUsd += planResult.costUsd;
+          state.totalCostUsd += planResult.costUsd;
+          store.set(chatId, state);
+          await sendMsg(`\uD83D\uDCCB Strategic plan ready ($${planResult.costUsd.toFixed(4)}). Executing ${batchItemCount} items...`);
+        } else {
+          // Planning failed — fall back to unguided iterations for this batch
+          state.strategicPlan = null;
+          store.set(chatId, state);
+          await sendMsg(`\u26A0\uFE0F Planning failed — falling back to unguided iterations for this batch.`);
+        }
       }
 
-      // ── EXECUTE (single session: evaluate → implement → commit) ──
-      state.currentPhase = "executing";
-      store.set(chatId, state);
+      // ── Execute batch iterations ──
+      const batchEnd = Math.min(i + batchItemCount, state.totalIterations);
 
-      const historyText = compactHistory(state.history);
-      const iterationPrompt = buildImproveIterationPrompt(
-        serviceName,
-        state.direction,
-        historyText,
-        iterNum,
-        state.totalIterations,
-        fileTree,
-      );
+      for (let j = i; j < batchEnd; j++) {
+        // ── Check cancellation / stopping (status mutated externally by /improve stop|cancel) ──
+        if (abortSignal.aborted || (state.status as string) === "cancelled") {
+          state.status = "cancelled";
+          store.set(chatId, state);
+          await sendMsg(`Improve loop cancelled after ${state.completedIterations}/${state.totalIterations} iterations.`);
+          return;
+        }
 
-      let execResult;
-      let panelInterval: ReturnType<typeof setInterval> | null = null;
-      let progressMessageId: number | null = null;
-      const formatter = new StreamFormatter(`Improve #${iterNum}`);
-      const lastEditText = { value: "" };
+        if ((state.status as string) === "stopping") {
+          state.status = "stopped";
+          store.set(chatId, state);
+          await sendMsg(buildSummary(state, "Stopped gracefully"));
+          return;
+        }
 
-      try {
-        // Briefly mark idle so /cancel can fire, then re-mark busy
-        chatLocks.setExecutorIdle(chatId);
-        if (abortSignal.aborted) { state.status = "cancelled"; store.set(chatId, state); return; }
-        chatLocks.setExecutorBusy(chatId);
+        const iterNum = j + 1;
+        const batchItemNumber = j - i + 1; // 1-based index within current batch
 
-        // Send initial progress message and capture message_id for in-place editing
+        // ── Refresh file tree every 5 iterations ──
+        if (iterNum === 1 || iterNum % 5 === 0) {
+          fileTree = generateFileTree(state.projectDir);
+        }
+
+        // ── EXECUTE (single session: evaluate → implement → commit) ──
+        state.currentPhase = "executing";
+        store.set(chatId, state);
+
+        const historyText = compactHistory(state.history);
+
+        // Build strategic plan context for this iteration
+        const strategicContext = state.strategicPlan
+          ? { fullPlan: state.strategicPlan, itemNumber: batchItemNumber }
+          : null;
+
+        const iterationPrompt = buildImproveIterationPrompt(
+          serviceName,
+          state.direction,
+          historyText,
+          iterNum,
+          state.totalIterations,
+          fileTree,
+          strategicContext,
+        );
+
+        let execResult;
+        let panelInterval: ReturnType<typeof setInterval> | null = null;
+        let progressMessageId: number | null = null;
+        const formatter = new StreamFormatter(`\u2699\uFE0F Iteration ${iterNum}/${state.totalIterations}`);
+        const lastEditText = { value: "" };
+
+        // Capture token data from invocation
+        let capturedTokens: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number } = {};
+
         try {
-          const msg = await botApi.api.sendMessage(chatId, "\u2699\uFE0F Working \u2014 0s\n\nStarting up...");
-          progressMessageId = msg.message_id;
-        } catch (err) {
-          logger.warn({ chatId, err }, "Failed to send improve progress message");
-        }
+          // Briefly mark idle so /cancel can fire, then re-mark busy
+          chatLocks.setExecutorIdle(chatId);
+          if (abortSignal.aborted) { state.status = "cancelled"; store.set(chatId, state); return; }
+          chatLocks.setExecutorBusy(chatId);
 
-        // Set up 4s interval to edit the progress message with live panel
-        if (progressMessageId) {
-          panelInterval = setInterval(async () => {
-            if (!progressMessageId) return;
-            const panel = formatter.render();
-            if (panel) {
-              await safeEditRaw(botApi.api, chatId, progressMessageId, panel, lastEditText).catch(() => {});
-            }
-          }, PANEL_UPDATE_INTERVAL_MS);
-        }
+          // Send initial progress message and capture message_id for in-place editing
+          try {
+            const msg = await botApi.api.sendMessage(chatId, `\u2699\uFE0F Iteration ${iterNum}/${state.totalIterations} \u2014 0m 0s\n\nStarting up...`);
+            progressMessageId = msg.message_id;
+          } catch (err) {
+            logger.warn({ chatId, err }, "Failed to send improve progress message");
+          }
 
-        execResult = await executor.execute({
-          chatId,
-          task: iterationPrompt,
-          context: `Improve loop iteration ${iterNum}/${state.totalIterations}`,
-          complexity: "moderate",
-          rawMessage: `[improve loop iteration ${iterNum}/${state.totalIterations}]`,
-          cwd: state.projectDir,
-          abortSignal,
-          onStreamEvent: (event) => formatter.addEvent(event),
-          onStatusUpdate: async (update) => {
-            if (update.important) {
-              try {
-                await botApi.api.sendMessage(chatId, update.message, { parse_mode: "Markdown" });
-              } catch {
-                await botApi.api.sendMessage(chatId, update.message.replace(/[*_`]/g, "")).catch(() => {});
+          // Set up 4s interval to edit the progress message with live panel
+          if (progressMessageId) {
+            panelInterval = setInterval(async () => {
+              if (!progressMessageId) return;
+              const panel = formatter.render();
+              if (panel) {
+                await safeEditRaw(botApi.api, chatId, progressMessageId, panel, lastEditText).catch(() => {});
               }
-            }
-          },
-          onInvocation: (raw) => logInvocation(raw, chatId, "executor", invocationLogger),
-        });
-      } catch (err: any) {
-        // Clean up progress panel on error
-        if (panelInterval) clearInterval(panelInterval);
-        panelInterval = null;
+            }, PANEL_UPDATE_INTERVAL_MS);
+          }
 
-        // Render final error panel
-        if (progressMessageId) {
-          const errorPanel = formatter.eventCount > 0
-            ? formatter.renderForce().replace(/^⚙️ Working — .+/, `\u274C Failed — Iteration ${iterNum}`)
-            : `\u274C Failed — Iteration ${iterNum}`;
-          lastEditText.value = "";
-          await safeEditRaw(botApi.api, chatId, progressMessageId, errorPanel, lastEditText).catch(() => {});
+          execResult = await executor.execute({
+            chatId,
+            task: iterationPrompt,
+            context: `Improve loop iteration ${iterNum}/${state.totalIterations}`,
+            complexity: "moderate",
+            rawMessage: `[improve loop iteration ${iterNum}/${state.totalIterations}]`,
+            cwd: state.projectDir,
+            abortSignal,
+            onStreamEvent: (event) => formatter.addEvent(event),
+            onStatusUpdate: async (update) => {
+              if (update.important) {
+                try {
+                  await botApi.api.sendMessage(chatId, update.message, { parse_mode: "Markdown" });
+                } catch {
+                  await botApi.api.sendMessage(chatId, update.message.replace(/[*_`]/g, "")).catch(() => {});
+                }
+              }
+            },
+            onInvocation: (raw) => {
+              logInvocation(raw, chatId, "executor", invocationLogger);
+
+              // Capture token data for final summary
+              const entry = Array.isArray(raw)
+                ? raw.find((item: any) => item.type === "result") || raw[0]
+                : raw;
+              if (entry) {
+                const usage = entry.modelUsage || entry.model_usage;
+                if (usage) {
+                  capturedTokens.inputTokens = usage.input_tokens || usage.inputTokens;
+                  capturedTokens.outputTokens = usage.output_tokens || usage.outputTokens;
+                  capturedTokens.cacheReadTokens = usage.cache_read_input_tokens || usage.cacheReadInputTokens;
+                }
+              }
+            },
+          });
+        } catch (err: any) {
+          // Clean up progress panel on error
+          if (panelInterval) clearInterval(panelInterval);
+          panelInterval = null;
+
+          // Render final error panel
+          if (progressMessageId) {
+            const errorPanel = formatter.renderFinalSummary({
+              costUsd: 0,
+              durationMs: Date.now() - (state.startedAt || Date.now()),
+              success: false,
+            });
+            lastEditText.value = "";
+            await safeEditRaw(botApi.api, chatId, progressMessageId, errorPanel, lastEditText).catch(() => {});
+          }
+
+          if (abortSignal.aborted) { state.status = "cancelled"; store.set(chatId, state); return; }
+          logger.error({ chatId, iteration: iterNum, err }, "Improve loop iteration failed");
+          consecutiveFailures++;
+          state.history.push({
+            iteration: iterNum,
+            summary: `Failed: ${err.message?.slice(0, 100)}`,
+            success: false,
+            costUsd: 0,
+            durationMs: 0,
+          });
+          state.completedIterations = iterNum;
+          store.set(chatId, state);
+
+          if (consecutiveFailures >= CONSECUTIVE_FAILURE_LIMIT) {
+            state.status = "paused";
+            state.pauseReason = `${CONSECUTIVE_FAILURE_LIMIT} consecutive failures`;
+            store.set(chatId, state);
+            await sendMsg(`Improve loop paused: ${state.pauseReason}\n\nUse /improve resume to continue.`);
+            return;
+          }
+          await sendMsg(`Iteration ${iterNum} failed: ${err.message?.slice(0, 100)}`);
+          await delay(INTER_ITERATION_DELAY_MS);
+          continue;
         }
 
-        if (abortSignal.aborted) { state.status = "cancelled"; store.set(chatId, state); return; }
-        logger.error({ chatId, iteration: iterNum, err }, "Improve loop iteration failed");
-        consecutiveFailures++;
+        // ── Clean up progress panel ──
+        if (panelInterval) clearInterval(panelInterval);
+
+        // Render final summary panel on the progress message
+        if (progressMessageId) {
+          const finalPanel = formatter.renderFinalSummary({
+            costUsd: execResult.costUsd,
+            durationMs: execResult.durationMs,
+            success: execResult.success,
+            ...capturedTokens,
+          });
+          lastEditText.value = "";
+          await safeEditRaw(botApi.api, chatId, progressMessageId, finalPanel, lastEditText).catch(() => {});
+        }
+
+        // ── Record result ──
+        state.totalCostUsd += execResult.costUsd;
+
+        // Extract a one-line summary from the result (first non-empty line or truncated)
+        const summary = extractSummary(execResult.result);
+
         state.history.push({
           iteration: iterNum,
-          summary: `Failed: ${err.message?.slice(0, 100)}`,
-          success: false,
-          costUsd: 0,
-          durationMs: 0,
+          summary,
+          success: execResult.success,
+          costUsd: execResult.costUsd,
+          durationMs: execResult.durationMs,
         });
         state.completedIterations = iterNum;
+        state.currentPhase = "idle";
         store.set(chatId, state);
+
+        if (execResult.success) {
+          consecutiveFailures = 0;
+        } else {
+          consecutiveFailures++;
+        }
+
+        const icon = execResult.success ? "\u2705" : "\u274C";
+        const durSec = Math.round(execResult.durationMs / 1000);
+        const cost = execResult.costUsd.toFixed(4);
+        await sendMsg(`${icon} Iteration ${iterNum}/${state.totalIterations} (${durSec}s, $${cost})\n${summary}`);
 
         if (consecutiveFailures >= CONSECUTIVE_FAILURE_LIMIT) {
           state.status = "paused";
@@ -364,70 +605,19 @@ export async function runImproveLoop(opts: {
           await sendMsg(`Improve loop paused: ${state.pauseReason}\n\nUse /improve resume to continue.`);
           return;
         }
-        await sendMsg(`Iteration ${iterNum} failed: ${err.message?.slice(0, 100)}`);
-        await delay(INTER_ITERATION_DELAY_MS);
-        continue;
-      }
 
-      // ── Clean up progress panel ──
-      if (panelInterval) clearInterval(panelInterval);
-
-      // Render final "Done" panel on the progress message
-      if (progressMessageId) {
-        const elapsed = Math.round(execResult.durationMs / 1000);
-        let finalPanel: string;
-        if (formatter.eventCount > 0) {
-          finalPanel = formatter.renderForce().replace(
-            /^⚙️ Working — .+/,
-            `\u2705 Done — ${elapsed}s`,
-          );
-        } else {
-          finalPanel = `\u2705 Done — ${elapsed}s\n\nNo tool activity captured.`;
+        // ── Inter-iteration delay ──
+        if (j < state.totalIterations - 1) {
+          await delay(INTER_ITERATION_DELAY_MS);
         }
-        lastEditText.value = "";
-        await safeEditRaw(botApi.api, chatId, progressMessageId, finalPanel, lastEditText).catch(() => {});
       }
 
-      // ── Record result ──
-      state.totalCostUsd += execResult.costUsd;
+      // ── Advance past this batch ──
+      i = batchEnd;
 
-      // Extract a one-line summary from the result (first non-empty line or truncated)
-      const summary = extractSummary(execResult.result);
-
-      state.history.push({
-        iteration: iterNum,
-        summary,
-        success: execResult.success,
-        costUsd: execResult.costUsd,
-        durationMs: execResult.durationMs,
-      });
-      state.completedIterations = iterNum;
-      state.currentPhase = "idle";
+      // Clear strategic plan so next batch gets a fresh one
+      state.strategicPlan = null;
       store.set(chatId, state);
-
-      if (execResult.success) {
-        consecutiveFailures = 0;
-      } else {
-        consecutiveFailures++;
-      }
-
-      const icon = execResult.success ? "\u2705" : "\u274C";
-      const durSec = Math.round(execResult.durationMs / 1000);
-      const cost = execResult.costUsd.toFixed(4);
-      await sendMsg(`${icon} Iteration ${iterNum}/${state.totalIterations} (${durSec}s, $${cost})\n${summary}`);
-
-      if (consecutiveFailures >= CONSECUTIVE_FAILURE_LIMIT) {
-        state.status = "paused";
-        state.pauseReason = `${CONSECUTIVE_FAILURE_LIMIT} consecutive failures`;
-        store.set(chatId, state);
-        await sendMsg(`Improve loop paused: ${state.pauseReason}\n\nUse /improve resume to continue.`);
-        return;
-      }
-
-      // ── Inter-iteration delay ──
-      if (i < state.totalIterations - 1) {
-        await delay(INTER_ITERATION_DELAY_MS);
-      }
     }
 
     // ── All iterations complete ──
@@ -468,6 +658,14 @@ function buildSummary(state: ImproveLoopState, label: string): string {
 
   if (state.direction) {
     lines.push(`Direction: ${state.direction}`);
+  }
+
+  if (state.strategicPlanCostUsd > 0) {
+    lines.push(`Planning cost: $${state.strategicPlanCostUsd.toFixed(4)}`);
+  }
+
+  if (state.batchSize > 1 && state.totalIterations > 1) {
+    lines.push(`Batch size: ${state.batchSize}`);
   }
 
   lines.push("");

@@ -222,6 +222,60 @@ Produce a REVISED plan that addresses the user's feedback. Follow the same outpu
  * Builds a single combined prompt for the improve loop — evaluate + implement + commit in one session.
  * Replaces the old two-phase approach (evaluator → executor) to avoid duplicate codebase discovery.
  */
+/**
+ * Builds a strategic planning prompt for the improve loop's batch planning phase.
+ * This is a read-only session that surveys the project and produces a prioritized roadmap
+ * of up to `batchSize` improvements.
+ */
+export function buildImproveStrategicPlanPrompt(
+  serviceName: string,
+  direction: string | null,
+  batchSize: number,
+  fileTree?: string,
+): string {
+  const focusSection = direction
+    ? `\n## Focus Direction\n\nImprovements should focus on: **${direction}**\nStay on theme but prioritize by impact within this area.\n`
+    : `\n## Focus Direction\n\nNo specific direction given. Prioritize improvements by impact:\n1. Bugs or broken functionality\n2. Performance issues\n3. Code quality / maintainability\n4. Missing features that would clearly help\n5. Documentation gaps\n`;
+
+  const fileTreeSection = fileTree
+    ? `\n## Project Structure\n\n\`\`\`\n${fileTree}\n\`\`\`\n`
+    : "";
+
+  return `You are a strategic planning agent for an autonomous self-improvement loop.
+
+## Your Job
+
+Survey the codebase and produce a prioritized roadmap of exactly ${batchSize} atomic improvements. Each improvement will be executed in its own iteration by a separate agent.
+
+${focusSection}
+${fileTreeSection}
+## Output Format
+
+Produce a numbered list of exactly ${batchSize} improvements. For each item:
+
+1. **Title** — a concise name for the improvement
+2. **Files** — which files will be touched
+3. **Description** — what exactly to do (2-3 sentences, be specific about functions/patterns/changes)
+
+Format each item as:
+
+\`\`\`
+### <number>. <Title>
+Files: <file1>, <file2>
+<Description>
+\`\`\`
+
+## Rules
+
+1. Each item must be atomic — completable in a single focused iteration.
+2. Order items by priority — highest impact first.
+3. Items must NOT conflict with each other (no two items touching the same code in incompatible ways).
+4. Do NOT propose changes to \`.env\`, \`data/\`, or the improve loop infrastructure (\`src/improve-loop.ts\`, the \`/improve\` command handler).
+5. Do NOT propose restarting the ${serviceName} service.
+6. Be specific — name files, functions, and describe exact changes.
+7. Keep the total output concise — this is a roadmap, not a design doc.`;
+}
+
 export function buildImproveIterationPrompt(
   serviceName: string,
   direction: string | null,
@@ -229,6 +283,7 @@ export function buildImproveIterationPrompt(
   iteration: number,
   total: number,
   fileTree?: string,
+  strategicPlan?: { fullPlan: string; itemNumber: number } | null,
 ): string {
   const focusSection = direction
     ? `\n## Focus Direction\n\nImprovements should focus on: **${direction}**\nStay on theme but pick the single most impactful improvement within this area.\n`
@@ -238,16 +293,21 @@ export function buildImproveIterationPrompt(
     ? `\n## Project Structure\n\n\`\`\`\n${fileTree}\n\`\`\`\n\nUse this tree for structural awareness — you don't need to Glob for the project layout.\n`
     : "";
 
+  const strategicSection = strategicPlan
+    ? `\n## Strategic Roadmap\n\nYou are executing item **#${strategicPlan.itemNumber}** from the following roadmap. Focus on that item specifically — do NOT pick a different improvement.\n\n${strategicPlan.fullPlan}\n\n**Your assignment: item #${strategicPlan.itemNumber} above.** Implement it fully.\n`
+    : "";
+
   return `You are an autonomous self-improvement agent (iteration ${iteration}/${total}).
 
 ## Workflow
 
-1. **Evaluate** the codebase and pick ONE atomic improvement to make.
+1. ${strategicPlan ? `**Implement** your assigned roadmap item (#${strategicPlan.itemNumber}).` : "**Evaluate** the codebase and pick ONE atomic improvement to make."}
 2. **Implement** the improvement — edit files, fix code, refactor, etc.
 3. **Commit** your changes with a descriptive commit message.
 4. **Report** what you did. Your FIRST line of output must be a one-line summary.
 
 ${focusSection}
+${strategicSection}
 ${fileTreeSection}
 ## Previous Iterations
 
@@ -255,7 +315,7 @@ ${historyText}
 
 ## Rules
 
-1. Pick ONE improvement — small, focused, and completable in this single iteration.
+1. ${strategicPlan ? `Implement your assigned roadmap item (#${strategicPlan.itemNumber}) — do NOT pick something else.` : "Pick ONE improvement — small, focused, and completable in this single iteration."}
 2. Do NOT repeat work from previous iterations.
 3. Do NOT modify \`.env\`, \`data/\`, or the improve loop infrastructure (\`src/improve-loop.ts\`, the \`/improve\` command handler).
 4. Do NOT break existing functionality — if unsure, don't change it.

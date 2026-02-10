@@ -74,7 +74,7 @@ export function registerCommands(
       "/git status|commit|push|pr - Git operations\n" +
       "/memory list|add|remove|clear - Persistent memory\n" +
       "/compact - Summarize & clear session\n" +
-      "/improve [N] [direction] - Self-improvement loop\n" +
+      "/improve [N] [batch:N] [direction] - Self-improvement loop\n" +
       "/cron list|add|remove|run|enable|disable - Scheduled tasks\n" +
       "/webhook list|create|remove - Webhook triggers\n\n" +
       "Just send a text message to chat with Claude.",
@@ -191,6 +191,13 @@ export function registerCommands(
         `Cost: $${cost}`,
         `Running: ${elapsed}`,
       ];
+      if (state.batchSize > 1 && state.totalIterations > 1) {
+        lines.push(`Batch size: ${state.batchSize}`);
+        lines.push(`Planning: ${state.strategicPlan ? "has plan" : "no plan"}`);
+        if (state.strategicPlanCostUsd > 0) {
+          lines.push(`Planning cost: $${state.strategicPlanCostUsd.toFixed(4)}`);
+        }
+      }
       if (state.direction) lines.push(`Direction: ${state.direction}`);
       if (state.pauseReason) lines.push(`Pause reason: ${state.pauseReason}`);
 
@@ -299,20 +306,32 @@ export function registerCommands(
       return;
     }
 
-    // Parse count and direction
+    // Parse count, batch:N, and direction
     let count = 1;
+    let batchSize = 10;
     let direction: string | null = null;
 
     if (args) {
-      const firstPart = parts[0];
-      const num = parseInt(firstPart, 10);
+      // Extract batch:N if present
+      const batchMatch = args.match(/\bbatch:(\d+)\b/i);
+      if (batchMatch) {
+        batchSize = Math.max(1, Math.min(parseInt(batchMatch[1], 10), 50));
+      }
+      // Remove batch:N from args for further parsing
+      const cleanArgs = args.replace(/\bbatch:\d+\b/i, "").trim();
+      const cleanParts = cleanArgs.split(/\s+/).filter(Boolean);
 
-      if (!isNaN(num) && num > 0) {
-        count = Math.min(num, 50); // Cap at 50 iterations
-        direction = parts.slice(1).join(" ").trim() || null;
-      } else {
-        // First word is not a number — entire args is the direction, count=1
-        direction = args;
+      if (cleanParts.length > 0) {
+        const firstPart = cleanParts[0];
+        const num = parseInt(firstPart, 10);
+
+        if (!isNaN(num) && num > 0) {
+          count = Math.min(num, 50); // Cap at 50 iterations
+          direction = cleanParts.slice(1).join(" ").trim() || null;
+        } else {
+          // First word is not a number — entire cleaned args is the direction, count=1
+          direction = cleanArgs;
+        }
       }
     }
 
@@ -335,6 +354,9 @@ export function registerCommands(
       startedAt: Date.now(),
       currentPhase: "idle",
       pauseReason: null,
+      batchSize,
+      strategicPlan: null,
+      strategicPlanCostUsd: 0,
     };
 
     improveLoopStore.set(chatId, state);
@@ -344,7 +366,8 @@ export function registerCommands(
     chatLocks.setExecutorBusy(chatId);
 
     const dirLabel = direction ? ` (focus: ${direction})` : "";
-    await ctx.reply(`Starting improve loop: ${count} iteration(s)${dirLabel}\n\nUse /improve stop for graceful stop, /improve cancel to abort.`);
+    const batchLabel = count > 1 ? ` | batch: ${batchSize}` : "";
+    await ctx.reply(`Starting improve loop: ${count} iteration(s)${batchLabel}${dirLabel}\n\nUse /improve stop for graceful stop, /improve cancel to abort.`);
 
     runImproveLoop({
       state,
