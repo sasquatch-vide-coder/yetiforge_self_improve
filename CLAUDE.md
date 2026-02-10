@@ -140,18 +140,21 @@ Sessions are resumed via `--resume <sessionId>` for conversation continuity.
 - **Config**: `ADMIN_JWT_SECRET` in `.env`
 
 ## Deployment (VPS)
+- **SSH Host**: `vps` (configured in `~/.ssh/config` — user `yeti`, key `~/.ssh/yetiforge_vps`)
+- **Project path on VPS**: `/opt/yetiforge` (NOT `~/yetiforge`)
 - **Service**: `sudo systemctl {start|stop|restart|status} yetiforge`
 - **Logs**: `sudo journalctl -u yetiforge -f`
 - **Firewall**: iptables rules for ports 80, 443
+- **sudo**: Requires password — cannot run `sudo` non-interactively over SSH. Service restarts must be done manually by the user.
 
 ## GitHub
 - **PAT**: Stored in `.env` as `GITHUB_PAT`
 
 ### Deploy steps
 ```bash
-# On VPS:
-cd ~/yetiforge && npm install && npm run build
-cd status/client && npm install && npm run build
-sudo cp yetiforge.service /etc/systemd/system/yetiforge.service
-sudo systemctl daemon-reload && sudo systemctl restart yetiforge
+# From local machine (pulls, installs, builds):
+ssh vps "cd /opt/yetiforge && git pull && npm install && npm run build"
+
+# Then ask the user to restart the service (requires sudo password):
+# ssh vps "sudo systemctl restart yetiforge"
 ```
