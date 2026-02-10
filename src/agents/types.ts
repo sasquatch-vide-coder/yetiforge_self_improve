@@ -55,7 +55,7 @@ export interface ChatAgentResponse {
 
 // --- Structured stream event types for Phase 1 output streaming ---
 
-export type StreamEventType = "file_read" | "file_edit" | "file_write" | "command" | "info" | "warning" | "error";
+export type StreamEventType = "file_read" | "file_edit" | "file_write" | "command" | "info" | "warning" | "error" | "status_text";
 
 export interface StreamEvent {
   type: StreamEventType;

@@ -13,7 +13,7 @@ import { TaskQueue } from "../task-queue.js";
 import { PlanStore } from "../plan-store.js";
 import { ImproveLoopStore } from "../improve-loop.js";
 import { startTypingIndicator, sendResponse, editMessage, safeEditMessage } from "../utils/telegram.js";
-import { StreamFormatter } from "../utils/stream-formatter.js";
+import { StreamFormatter, FinalSummaryData } from "../utils/stream-formatter.js";
 import { logger } from "../utils/logger.js";
 import type { WorkRequest, ChatAction } from "../agents/types.js";
 
@@ -414,9 +414,12 @@ async function planInBackground(
     }
 
     // StreamFormatter for progress panel
-    const formatter = new StreamFormatter(workRequest.task);
+    const headerIcon = revisionCount > 0 ? `\u{1F504} Re-planning` : "\u2699\uFE0F Planning";
+    const formatter = new StreamFormatter(headerIcon);
     const lastEditText = { value: "" };
-    const planStartTime = Date.now();
+
+    // Capture token data from invocation
+    let capturedTokens: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number } = {};
 
     // Progress panel update interval
     const PANEL_UPDATE_INTERVAL_MS = 4000;
@@ -427,9 +430,7 @@ async function planInBackground(
         if (!workingMessageId) return;
         const panel = formatter.render();
         if (panel) {
-          // Override the header to say "Planning" instead of "Working"
-          const planPanel = panel.replace(/^⚙️ Working/, planLabel);
-          await safeEditMessage(ctx, workingMessageId, planPanel, lastEditText).catch(() => {});
+          await safeEditMessage(ctx, workingMessageId, panel, lastEditText).catch(() => {});
         }
       }, PANEL_UPDATE_INTERVAL_MS);
     }
@@ -464,6 +465,14 @@ async function planInBackground(
             isError: entry.iserror || entry.is_error || false,
             modelUsage: entry.modelUsage || entry.model_usage,
           }).catch(() => {});
+
+          // Capture token data for final summary
+          const usage = entry.modelUsage || entry.model_usage;
+          if (usage) {
+            capturedTokens.inputTokens = usage.input_tokens || usage.inputTokens;
+            capturedTokens.outputTokens = usage.output_tokens || usage.outputTokens;
+            capturedTokens.cacheReadTokens = usage.cache_read_input_tokens || usage.cacheReadInputTokens;
+          }
         }
       },
     });
@@ -473,17 +482,12 @@ async function planInBackground(
 
     // Final panel render
     if (workingMessageId) {
-      const elapsed = Math.round((Date.now() - planStartTime) / 1000);
-      let finalPanel: string;
-      if (formatter.eventCount > 0) {
-        finalPanel = formatter.renderForce();
-        finalPanel = finalPanel.replace(
-          /^⚙️ Working — .+/,
-          `📋 Plan Ready — ${elapsed}s`,
-        );
-      } else {
-        finalPanel = `📋 Plan Ready — ${elapsed}s\n\nPlan investigation complete.`;
-      }
+      const finalPanel = formatter.renderFinalSummary({
+        costUsd: planResult.costUsd,
+        durationMs: planResult.durationMs,
+        success: true,
+        ...capturedTokens,
+      });
       lastEditText.value = "";
       await safeEditMessage(ctx, workingMessageId, finalPanel, lastEditText).catch(() => {});
     }
@@ -549,9 +553,12 @@ async function executeInBackground(
     }
 
     // StreamFormatter for rich progress panel
-    const formatter = new StreamFormatter(workRequest.task);
+    const formatter = new StreamFormatter("\u2699\uFE0F Working");
     const lastEditText = { value: "" };
     const execStartTime = Date.now();
+
+    // Capture token data from invocation
+    let capturedTokens: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number } = {};
 
     // Progress panel update interval (3-5 seconds)
     const PANEL_UPDATE_INTERVAL_MS = 4000;
@@ -606,6 +613,14 @@ async function executeInBackground(
             isError: entry.iserror || entry.is_error || false,
             modelUsage: entry.modelUsage || entry.model_usage,
           }).catch(() => {});
+
+          // Capture token data for final summary
+          const usage = entry.modelUsage || entry.model_usage;
+          if (usage) {
+            capturedTokens.inputTokens = usage.input_tokens || usage.inputTokens;
+            capturedTokens.outputTokens = usage.output_tokens || usage.outputTokens;
+            capturedTokens.cacheReadTokens = usage.cache_read_input_tokens || usage.cacheReadInputTokens;
+          }
         }
       },
     });
@@ -616,21 +631,12 @@ async function executeInBackground(
 
     // Final panel render — mark as complete and preserve the message
     if (workingMessageId) {
-      const elapsed = Math.round((Date.now() - execStartTime) / 1000);
-      let finalPanel: string;
-      if (formatter.eventCount > 0) {
-        // Replace the "Working" header with a "Done" header in the final render
-        // Use .+ (not \S+) to match multi-word elapsed times like "2m 30s" or "1h 20m"
-        finalPanel = formatter.renderForce();
-        finalPanel = finalPanel.replace(
-          /^⚙️ Working — .+/,
-          `✅ Done — ${elapsed}s`,
-        );
-      } else {
-        finalPanel = `✅ Done — ${elapsed}s\n\nNo tool activity captured.`;
-      }
-      // Force the edit through by clearing lastEditText — ensures the "Done" panel
-      // is always sent even if the only change is the header line
+      const finalPanel = formatter.renderFinalSummary({
+        costUsd: result.costUsd,
+        durationMs: result.durationMs,
+        success: result.success,
+        ...capturedTokens,
+      });
       lastEditText.value = "";
       logger.info({ chatId, messageId: workingMessageId, panelLength: finalPanel.length }, "Sending final Done panel");
       await safeEditMessage(ctx, workingMessageId, finalPanel, lastEditText).catch((err) => {

@@ -1,99 +1,82 @@
-import type { StreamEvent, StreamEventType } from "../agents/types.js";
+import type { StreamEvent } from "../agents/types.js";
 
-const MAX_MESSAGE_LENGTH = 4096;
-const ICON_MAP: Record<StreamEventType, string> = {
-  file_read: "\u{1F4C2}",   // 📂
-  file_edit: "\u270F\uFE0F", // ✏️
-  file_write: "\u{1F4DD}",  // 📝
-  command: "\u25B6\uFE0F",  // ▶️
-  info: "\u2139\uFE0F",     // ℹ️
-  warning: "\u26A0\uFE0F",  // ⚠️
-  error: "\u274C",           // ❌
-};
-
-/** Shorten a file path to just the last N segments for display. */
-function shortPath(path: string, maxSegments = 3): string {
-  const segments = path.replace(/^\/+/, "").split("/");
-  if (segments.length <= maxSegments) return path;
-  return ".../" + segments.slice(-maxSegments).join("/");
-}
-
-/** Format elapsed time as human readable. */
+/** Always format as Xm Ys (even under 60s: "0m Xs"). */
 function formatElapsed(ms: number): string {
-  const seconds = Math.floor(ms / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remainingSec = seconds % 60;
-  if (minutes < 60) return remainingSec > 0 ? `${minutes}m ${remainingSec}s` : `${minutes}m`;
+  const totalSec = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSec / 60);
+  const seconds = totalSec % 60;
+  if (minutes < 60) return `${minutes}m ${seconds}s`;
   const hours = Math.floor(minutes / 60);
   const remainingMin = minutes % 60;
   return `${hours}h ${remainingMin}m`;
 }
 
+/** Format a token count as k/M for compact display. */
+function formatTokenCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+export interface FinalSummaryData {
+  costUsd: number;
+  durationMs: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  success: boolean;
+}
+
 /**
  * StreamFormatter accumulates structured events from the executor and renders
- * a formatted progress panel for Telegram. Keeps output under 4096 chars with
- * smart truncation (shows first few + last few events when there are too many).
+ * a minimal progress panel for Telegram.
+ *
+ * Layout:
+ *   ⚙️ Working — Xm Ys
+ *
+ *   ✏️ N edits  📂 N reads  ▶️ N commands
+ *
+ *   💬 [latest status from Claude's text output]
+ *
+ * The header label is configurable (e.g. "Planning", "Iteration 2/5").
+ * Everything else renders identically across all contexts.
  */
 export class StreamFormatter {
-  private events: StreamEvent[] = [];
+  private editCount = 0;
+  private readCount = 0;
+  private commandCount = 0;
+  private latestStatusText: string | null = null;
   private startTime: number;
-  private taskLabel: string;
+  private headerLabel: string;
   private lastRendered = "";
 
-  constructor(taskLabel: string) {
+  constructor(headerLabel: string = "\u2699\uFE0F Working") {
     this.startTime = Date.now();
-    this.taskLabel = taskLabel.length > 80 ? taskLabel.slice(0, 77) + "..." : taskLabel;
+    this.headerLabel = headerLabel;
   }
 
-  /** Add a structured event. */
+  /** Add a structured event — updates counts and status text. */
   addEvent(event: StreamEvent): void {
-    // Deduplicate consecutive identical events
-    const last = this.events[this.events.length - 1];
-    if (last && last.type === event.type && last.detail === event.detail) {
-      return;
+    switch (event.type) {
+      case "file_read":
+        this.readCount++;
+        break;
+      case "file_edit":
+      case "file_write":
+        this.editCount++;
+        break;
+      case "command":
+        this.commandCount++;
+        break;
+      case "status_text":
+        this.latestStatusText = event.detail;
+        break;
     }
-    this.events.push(event);
   }
 
-  /** Convenience: add a file read event. */
-  fileRead(path: string): void {
-    this.addEvent({ type: "file_read", timestamp: Date.now(), detail: path });
-  }
-
-  /** Convenience: add a file edit event. */
-  fileEdit(path: string): void {
-    this.addEvent({ type: "file_edit", timestamp: Date.now(), detail: path });
-  }
-
-  /** Convenience: add a file write event. */
-  fileWrite(path: string): void {
-    this.addEvent({ type: "file_write", timestamp: Date.now(), detail: path });
-  }
-
-  /** Convenience: add a command execution event. */
-  command(cmd: string, extra?: string): void {
-    this.addEvent({ type: "command", timestamp: Date.now(), detail: cmd, extra });
-  }
-
-  /** Convenience: add an info event. */
-  info(message: string): void {
-    this.addEvent({ type: "info", timestamp: Date.now(), detail: message });
-  }
-
-  /** Convenience: add a warning event. */
-  warning(message: string): void {
-    this.addEvent({ type: "warning", timestamp: Date.now(), detail: message });
-  }
-
-  /** Convenience: add an error event. */
-  error(message: string): void {
-    this.addEvent({ type: "error", timestamp: Date.now(), detail: message });
-  }
-
-  /** Get the number of events. */
+  /** Get total event count (edits + reads + commands). */
   get eventCount(): number {
-    return this.events.length;
+    return this.editCount + this.readCount + this.commandCount;
   }
 
   /** Render the formatted progress panel. Returns empty string if nothing changed. */
@@ -112,136 +95,61 @@ export class StreamFormatter {
     return this.lastRendered;
   }
 
+  /** Render a final summary panel (Done/Failed + counts + cost/tokens). */
+  renderFinalSummary(data: FinalSummaryData): string {
+    const elapsed = formatElapsed(data.durationMs);
+    const icon = data.success ? "\u2705" : "\u274C";
+    const label = data.success ? "Done" : "Failed";
+
+    const lines: string[] = [];
+    lines.push(`${icon} ${label} \u2014 ${elapsed}`);
+    lines.push("");
+
+    // Counts line
+    lines.push(this.buildCountsLine());
+
+    // Cost + tokens line
+    const costStr = `\u{1F4B0} $${data.costUsd.toFixed(4)}`;
+    const tokenParts: string[] = [];
+    if (data.inputTokens != null) tokenParts.push(`${formatTokenCount(data.inputTokens)} in`);
+    if (data.outputTokens != null) tokenParts.push(`${formatTokenCount(data.outputTokens)} out`);
+    if (data.cacheReadTokens != null && data.cacheReadTokens > 0) tokenParts.push(`${formatTokenCount(data.cacheReadTokens)} cache`);
+    const tokenStr = tokenParts.length > 0 ? ` | ${tokenParts.join(", ")}` : "";
+    lines.push(`${costStr}${tokenStr}`);
+
+    return lines.join("\n");
+  }
+
   private buildPanel(): string {
     const elapsed = formatElapsed(Date.now() - this.startTime);
     const lines: string[] = [];
 
     // Header with timer
-    lines.push(`\u2699\uFE0F Working \u2014 ${elapsed}`);
+    lines.push(`${this.headerLabel} \u2014 ${elapsed}`);
     lines.push("");
 
-    if (this.events.length === 0) {
+    if (this.eventCount === 0 && !this.latestStatusText) {
       lines.push("Starting up...");
       return lines.join("\n");
     }
 
-    // Categorize events for summary counts
-    const counts = this.countByType();
-    const summaryParts: string[] = [];
-    if (counts.file_read > 0) summaryParts.push(`${ICON_MAP.file_read} ${counts.file_read} read`);
-    if (counts.file_edit > 0) summaryParts.push(`${ICON_MAP.file_edit} ${counts.file_edit} edited`);
-    if (counts.file_write > 0) summaryParts.push(`${ICON_MAP.file_write} ${counts.file_write} written`);
-    if (counts.command > 0) summaryParts.push(`${ICON_MAP.command} ${counts.command} commands`);
+    // Counts line
+    lines.push(this.buildCountsLine());
 
-    if (summaryParts.length > 0) {
-      lines.push(summaryParts.join("  "));
+    // Status text line
+    if (this.latestStatusText) {
       lines.push("");
+      lines.push(`\u{1F4AC} ${this.latestStatusText}`);
     }
-
-    // Render event log with smart truncation
-    const eventLines = this.renderEvents();
-    lines.push(...eventLines);
-
-    // Join and enforce the 4096 limit
-    let panel = lines.join("\n");
-    if (panel.length > MAX_MESSAGE_LENGTH - 50) {
-      // Hard truncate as safety net — trim events from the middle
-      panel = this.buildTruncatedPanel(elapsed, counts, summaryParts);
-    }
-
-    return panel;
-  }
-
-  private renderEvents(): string[] {
-    const lines: string[] = [];
-    const MAX_EVENT_LINES = 30;
-
-    if (this.events.length <= MAX_EVENT_LINES) {
-      for (const event of this.events) {
-        lines.push(this.formatEvent(event));
-      }
-    } else {
-      // Smart truncation: show first 5, ellipsis, last 20
-      const headCount = 5;
-      const tailCount = 20;
-      const skipped = this.events.length - headCount - tailCount;
-
-      for (let i = 0; i < headCount; i++) {
-        lines.push(this.formatEvent(this.events[i]));
-      }
-      lines.push(`   ... ${skipped} more events ...`);
-      for (let i = this.events.length - tailCount; i < this.events.length; i++) {
-        lines.push(this.formatEvent(this.events[i]));
-      }
-    }
-
-    return lines;
-  }
-
-  private formatEvent(event: StreamEvent): string {
-    const icon = ICON_MAP[event.type] || "\u2022";
-    let detail = event.detail;
-
-    // Shorten file paths
-    if (event.type === "file_read" || event.type === "file_edit" || event.type === "file_write") {
-      detail = shortPath(detail);
-    }
-
-    // Truncate long details
-    if (detail.length > 70) {
-      detail = detail.slice(0, 67) + "...";
-    }
-
-    let line = `${icon} ${detail}`;
-
-    // Add extra info for commands (truncated)
-    if (event.extra) {
-      const extra = event.extra.length > 50 ? event.extra.slice(0, 47) + "..." : event.extra;
-      line += ` \u2014 ${extra}`;
-    }
-
-    return line;
-  }
-
-  private buildTruncatedPanel(elapsed: string, counts: Record<string, number>, summaryParts: string[]): string {
-    const lines: string[] = [];
-    lines.push(`\u2699\uFE0F Working \u2014 ${elapsed}`);
-    lines.push("");
-
-    if (summaryParts.length > 0) {
-      lines.push(summaryParts.join("  "));
-      lines.push("");
-    }
-
-    // Only show last N events that fit
-    const headerSize = lines.join("\n").length;
-    const budget = MAX_MESSAGE_LENGTH - headerSize - 100; // margin
-
-    const recentEvents: string[] = [];
-    let totalLen = 0;
-
-    // Walk backwards from the end
-    for (let i = this.events.length - 1; i >= 0; i--) {
-      const formatted = this.formatEvent(this.events[i]);
-      if (totalLen + formatted.length + 1 > budget) break;
-      recentEvents.unshift(formatted);
-      totalLen += formatted.length + 1;
-    }
-
-    const skipped = this.events.length - recentEvents.length;
-    if (skipped > 0) {
-      lines.push(`   ... ${skipped} earlier events omitted ...`);
-    }
-    lines.push(...recentEvents);
 
     return lines.join("\n");
   }
 
-  private countByType(): Record<string, number> {
-    const counts: Record<string, number> = {};
-    for (const event of this.events) {
-      counts[event.type] = (counts[event.type] || 0) + 1;
-    }
-    return counts;
+  private buildCountsLine(): string {
+    const parts: string[] = [];
+    parts.push(`\u270F\uFE0F ${this.editCount} edits`);
+    parts.push(`\u{1F4C2} ${this.readCount} reads`);
+    parts.push(`\u25B6\uFE0F ${this.commandCount} commands`);
+    return parts.join("  ");
   }
 }

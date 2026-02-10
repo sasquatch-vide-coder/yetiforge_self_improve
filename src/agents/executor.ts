@@ -59,6 +59,35 @@ function isTransientError(errorMsg: string): boolean {
   return TRANSIENT_ERROR_PATTERNS.some((p) => lower.includes(p.toLowerCase()));
 }
 
+/** Extract a clean one-liner from Claude's text output for the status panel. */
+function extractStatusLine(text: string): string | null {
+  // Strip markdown formatting
+  let clean = text
+    .replace(/```[\s\S]*?```/g, "")   // code blocks
+    .replace(/[*_~`#]/g, "")           // inline formatting
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1") // links → text
+    .replace(/\n{2,}/g, "\n");         // collapse blank lines
+
+  // Take the last meaningful line (most recent thought)
+  const lines = clean.split("\n").map(l => l.trim()).filter(l => l.length > 10);
+  if (lines.length === 0) return null;
+
+  let line = lines[lines.length - 1];
+
+  // Truncate to first sentence
+  const sentenceEnd = line.search(/[.!?]\s/);
+  if (sentenceEnd > 20) {
+    line = line.slice(0, sentenceEnd + 1);
+  }
+
+  // Cap at 100 chars
+  if (line.length > 100) {
+    line = line.slice(0, 97) + "...";
+  }
+
+  return line;
+}
+
 function formatDuration(ms: number): string {
   const seconds = Math.floor(ms / 1000);
   if (seconds < 60) return `${seconds}s`;
@@ -309,6 +338,15 @@ export class Executor {
 
         if (contentArray) {
           for (const block of contentArray) {
+            // Parse text blocks for status line
+            if (block.type === "text" && typeof block.text === "string") {
+              const statusLine = extractStatusLine(block.text);
+              if (statusLine) {
+                emitStreamEvent({ type: "status_text", timestamp: Date.now(), detail: statusLine });
+              }
+              continue;
+            }
+
             if (block.type !== "tool_use" || !block.name) continue;
 
             const toolName = block.name;
@@ -593,6 +631,15 @@ export class Executor {
 
         if (contentArray) {
           for (const block of contentArray) {
+            // Parse text blocks for status line
+            if (block.type === "text" && typeof block.text === "string") {
+              const statusLine = extractStatusLine(block.text);
+              if (statusLine) {
+                emitStreamEvent({ type: "status_text", timestamp: Date.now(), detail: statusLine });
+              }
+              continue;
+            }
+
             if (block.type !== "tool_use" || !block.name) continue;
             const toolName = block.name;
             const input = block.input || {};
