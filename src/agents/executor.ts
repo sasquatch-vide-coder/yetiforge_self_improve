@@ -1,3 +1,5 @@
+import { readdirSync, statSync } from "fs";
+import { join } from "path";
 import { Config } from "../config.js";
 import { invokeClaude } from "../claude/invoker.js";
 import { AgentConfigManager } from "./agent-config.js";
@@ -57,6 +59,59 @@ const TRANSIENT_ERROR_PATTERNS = [
 function isTransientError(errorMsg: string): boolean {
   const lower = errorMsg.toLowerCase();
   return TRANSIENT_ERROR_PATTERNS.some((p) => lower.includes(p.toLowerCase()));
+}
+
+/** Marker files that indicate a directory is a project root. */
+const PROJECT_MARKERS = [
+  "package.json", ".git", "Cargo.toml", "go.mod",
+  "pyproject.toml", "pom.xml", "Makefile", ".sln",
+  "Gemfile", "composer.json",
+];
+
+/**
+ * Scan a directory for project-like subdirectories.
+ * Returns a formatted listing string, or undefined if no projects found.
+ */
+function discoverProjects(baseDir: string): string | undefined {
+  let entries: string[];
+  try {
+    entries = readdirSync(baseDir);
+  } catch {
+    return undefined;
+  }
+
+  const projects: string[] = [];
+
+  for (const entry of entries) {
+    if (entry.startsWith(".")) continue;
+
+    const fullPath = join(baseDir, entry);
+    let isDir = false;
+    try {
+      isDir = statSync(fullPath).isDirectory();
+    } catch {
+      continue;
+    }
+    if (!isDir) continue;
+
+    // Check if this subdirectory has any project markers
+    const markers: string[] = [];
+    for (const marker of PROJECT_MARKERS) {
+      try {
+        statSync(join(fullPath, marker));
+        markers.push(marker);
+      } catch {
+        // marker doesn't exist
+      }
+    }
+
+    if (markers.length > 0) {
+      projects.push(`- ${fullPath} (${markers.join(", ")})`);
+    }
+  }
+
+  if (projects.length === 0) return undefined;
+  return projects.join("\n");
 }
 
 /** Extract a clean one-liner from Claude's text output for the status panel. */
@@ -429,7 +484,13 @@ export class Executor {
     }
 
     promptParts.push(`\n## Original User Message\n${opts.rawMessage}`);
-    promptParts.push(`\n## Working Directory\n${opts.cwd}`);
+
+    const projectHints = discoverProjects(opts.cwd);
+    if (projectHints) {
+      promptParts.push(`\n## Working Directory\n${opts.cwd}\n\n## Projects Found in Working Directory\n${projectHints}\n\nIf the task targets a specific project, navigate to its directory or use absolute paths.`);
+    } else {
+      promptParts.push(`\n## Working Directory\n${opts.cwd}`);
+    }
 
     const fullPrompt = promptParts.join("\n");
 
@@ -679,7 +740,13 @@ export class Executor {
       promptParts.push(`\n## Context\n${opts.context}`);
     }
     promptParts.push(`\n## Original User Message\n${opts.rawMessage}`);
-    promptParts.push(`\n## Working Directory\n${opts.cwd}`);
+
+    const projectHints = discoverProjects(opts.cwd);
+    if (projectHints) {
+      promptParts.push(`\n## Working Directory\n${opts.cwd}\n\n## Projects Found in Working Directory\n${projectHints}\n\nIf the task targets a specific project, navigate to its directory or use absolute paths.`);
+    } else {
+      promptParts.push(`\n## Working Directory\n${opts.cwd}`);
+    }
 
     const fullPrompt = promptParts.join("\n");
 
