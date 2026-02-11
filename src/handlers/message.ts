@@ -94,6 +94,9 @@ export async function handleMessage(
     const pendingPlan = _planStore.get(chatId);
     const pendingPlanContext = pendingPlan ? pendingPlan.planText : undefined;
 
+    // Build project context for natural-language project switching
+    const projectContext = projectManager.getProjectListForPrompt(chatId);
+
     // Step 1: Chat Agent — decides if this is chat, work, or plan response
     const chatResult = await chatAgent.invoke({
       chatId,
@@ -102,6 +105,7 @@ export async function handleMessage(
       abortSignal: controller.signal,
       memoryContext,
       pendingPlanContext,
+      projectContext: projectContext || undefined,
       onInvocation: (raw) => {
         const entry = Array.isArray(raw)
           ? raw.find((item: any) => item.type === "result") || raw[0]
@@ -161,6 +165,10 @@ export async function handleMessage(
 
       case "cancel_plan":
         await handleCancelPlan(chatId, ctx);
+        break;
+
+      case "switch_project":
+        await handleSwitchProject(chatId, action.projectName, projectManager, sessionManager, ctx);
         break;
 
       default:
@@ -379,6 +387,31 @@ async function handleCancelPlan(chatId: number, ctx: Context): Promise<void> {
     logger.warn({ chatId }, "cancel_plan received but no pending plan exists");
     await ctx.reply("No pending plan found to cancel.").catch(() => {});
   }
+}
+
+/**
+ * Handle project switch via natural language.
+ */
+async function handleSwitchProject(
+  chatId: number,
+  projectName: string,
+  projectManager: ProjectManager,
+  sessionManager: SessionManager,
+  ctx: Context,
+): Promise<void> {
+  const path = projectManager.switchProject(chatId, projectName);
+  if (!path) {
+    // Not found — send error with available projects
+    const projects = projectManager.list();
+    const available = Array.from(projects.keys()).join(", ") || "(none)";
+    await ctx.reply(`Project "${projectName}" not found.\n\nAvailable projects: ${available}`).catch(() => {});
+    return;
+  }
+
+  // Clear session when switching projects
+  sessionManager.clear(chatId);
+  await Promise.all([projectManager.save(), sessionManager.save()]);
+  logger.info({ chatId, projectName, path }, "Switched project via natural language");
 }
 
 // ─── BACKGROUND EXECUTION ──────────────────────────────────────────────────────

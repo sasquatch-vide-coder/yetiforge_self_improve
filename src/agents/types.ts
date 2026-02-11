@@ -29,8 +29,14 @@ export interface CancelPlan {
   type: "cancel_plan";
 }
 
+/** Emitted by chat agent when user asks to switch projects via natural language */
+export interface SwitchProject {
+  type: "switch_project";
+  projectName: string;
+}
+
 /** All possible action types the chat agent can emit */
-export type ChatAction = WorkRequest | ApprovePlan | RevisePlan | CancelPlan;
+export type ChatAction = WorkRequest | ApprovePlan | RevisePlan | CancelPlan | SwitchProject;
 
 export interface ExecutorResult {
   success: boolean;

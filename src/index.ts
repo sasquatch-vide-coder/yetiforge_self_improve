@@ -33,6 +33,13 @@ async function main() {
 
   await sessionManager.load();
   await projectManager.load();
+
+  // Auto-discover projects in the default directory
+  const scanResult = projectManager.scan();
+  if (scanResult.added.length > 0) {
+    logger.info({ added: scanResult.added, total: scanResult.total }, "Auto-discovered projects on startup");
+  }
+
   await invocationLogger.load();
 
   const agentConfig = new AgentConfigManager(config.dataDir);

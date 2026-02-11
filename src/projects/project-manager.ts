@@ -1,6 +1,14 @@
 import { readFile, writeFile, mkdir } from "fs/promises";
+import { readdirSync, statSync } from "fs";
 import { join } from "path";
 import { logger } from "../utils/logger.js";
+
+/** Marker files that indicate a directory is a project root. */
+export const PROJECT_MARKERS = [
+  "package.json", ".git", "Cargo.toml", "go.mod",
+  "pyproject.toml", "pom.xml", "Makefile", ".sln",
+  "Gemfile", "composer.json",
+];
 
 interface ProjectsData {
   projects: Record<string, string>; // name → path
@@ -77,5 +85,81 @@ export class ProjectManager {
 
   clearActive(chatId: number): void {
     this.activeProject.delete(chatId);
+  }
+
+  /**
+   * Scan a directory for project-like subdirectories and auto-register them.
+   * Returns stats about what was found.
+   */
+  scan(baseDir?: string): { added: string[]; existing: string[]; total: number } {
+    const dir = baseDir || this.defaultDir;
+    const added: string[] = [];
+    const existing: string[] = [];
+
+    let entries: string[];
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      logger.warn({ dir }, "Cannot scan directory for projects");
+      return { added, existing, total: this.projects.size };
+    }
+
+    for (const entry of entries) {
+      if (entry.startsWith(".")) continue;
+
+      const fullPath = join(dir, entry);
+      let isDir = false;
+      try {
+        isDir = statSync(fullPath).isDirectory();
+      } catch {
+        continue;
+      }
+      if (!isDir) continue;
+
+      // Check if this subdirectory has any project markers
+      let hasMarker = false;
+      for (const marker of PROJECT_MARKERS) {
+        try {
+          statSync(join(fullPath, marker));
+          hasMarker = true;
+          break;
+        } catch {
+          // marker doesn't exist
+        }
+      }
+
+      if (!hasMarker) continue;
+
+      const name = entry;
+      if (this.projects.has(name)) {
+        existing.push(name);
+      } else {
+        this.add(name, fullPath);
+        added.push(name);
+      }
+    }
+
+    if (added.length > 0) {
+      this.save().catch((err) => logger.error({ err }, "Failed to save after project scan"));
+      logger.info({ added, existing: existing.length, total: this.projects.size }, "Project scan complete");
+    }
+
+    return { added, existing, total: this.projects.size };
+  }
+
+  /**
+   * Build a compact context string listing all projects and marking the active one.
+   * Returns empty string if no projects registered.
+   */
+  getProjectListForPrompt(chatId: number): string {
+    if (this.projects.size === 0) return "";
+
+    const projectList = Array.from(this.projects.entries())
+      .map(([name, path]) => `${name} (${path})`)
+      .join(", ");
+
+    const activeName = this.activeProject.get(chatId) || "(none)";
+
+    return `[PROJECT CONTEXT]\nAvailable projects: ${projectList}\nActive project: ${activeName}`;
   }
 }

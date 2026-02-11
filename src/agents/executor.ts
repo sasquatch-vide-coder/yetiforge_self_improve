@@ -1,6 +1,7 @@
 import { readdirSync, statSync } from "fs";
 import { join } from "path";
 import { Config } from "../config.js";
+import { PROJECT_MARKERS } from "../projects/project-manager.js";
 import { invokeClaude } from "../claude/invoker.js";
 import { AgentConfigManager } from "./agent-config.js";
 import { AgentRegistry, agentRegistry as defaultRegistry } from "./agent-registry.js";
@@ -60,13 +61,6 @@ function isTransientError(errorMsg: string): boolean {
   const lower = errorMsg.toLowerCase();
   return TRANSIENT_ERROR_PATTERNS.some((p) => lower.includes(p.toLowerCase()));
 }
-
-/** Marker files that indicate a directory is a project root. */
-const PROJECT_MARKERS = [
-  "package.json", ".git", "Cargo.toml", "go.mod",
-  "pyproject.toml", "pom.xml", "Makefile", ".sln",
-  "Gemfile", "composer.json",
-];
 
 /**
  * Scan a directory for project-like subdirectories.

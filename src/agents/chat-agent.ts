@@ -38,6 +38,8 @@ export class ChatAgent {
     memoryContext?: string;
     /** If a plan is pending, inject marker so chat agent knows to expect approval/rejection */
     pendingPlanContext?: string;
+    /** Project context listing available projects and active one */
+    projectContext?: string;
   }): Promise<{
     chatResponse: string;
     workRequest: WorkRequest | null;
@@ -48,13 +50,16 @@ export class ChatAgent {
     const tierConfig = this.agentConfig.getConfig("chat");
     const sessionId = this.sessionManager.getSessionId(opts.chatId, "chat");
 
-    // Build the full prompt with memory context and pending plan marker
+    // Build the full prompt with project context, memory context, and pending plan marker
     let fullPrompt = opts.prompt;
     if (opts.pendingPlanContext) {
       fullPrompt = `[PENDING PLAN]\nThe following plan is awaiting user approval:\n\n${opts.pendingPlanContext}\n\n---\n\nUser message: ${fullPrompt}`;
     }
     if (opts.memoryContext) {
       fullPrompt = `${opts.memoryContext}\n\n---\n\n${fullPrompt}`;
+    }
+    if (opts.projectContext) {
+      fullPrompt = `${opts.projectContext}\n\n---\n\n${fullPrompt}`;
     }
 
     const result = await invokeClaude({
@@ -139,6 +144,13 @@ function parseChatResponse(text: string, botName: string = "YETIFORGE"): ParsedC
           break;
         case "cancel_plan":
           action = { type: "cancel_plan" };
+          break;
+        case "switch_project":
+          if (parsed.projectName) {
+            action = { type: "switch_project", projectName: parsed.projectName };
+          } else {
+            logger.warn({ action: parsed }, "switch_project missing projectName field, ignoring");
+          }
           break;
         default:
           logger.warn({ action: parsed }, "Unknown action type from chat agent, ignoring");

@@ -70,7 +70,7 @@ export function registerCommands(
       "/queue list|cancel|clear - Task queue management\n" +
       "/resume - Resume interrupted tasks\n" +
       "/model - Show agent model config\n" +
-      "/project list|add|switch|remove - Manage projects\n" +
+      "/project list|add|switch|remove|scan - Manage projects\n" +
       "/git status|commit|push|pr - Git operations\n" +
       "/memory list|add|remove|clear - Persistent memory\n" +
       "/compact - Summarize & clear session\n" +
@@ -1049,7 +1049,20 @@ Respond in your usual voice.`;
       return;
     }
 
-    ctx.reply("Unknown subcommand. Use: list, add, switch, remove");
+    if (subcommand === "scan") {
+      const result = projectManager.scan(config.defaultProjectDir);
+      const lines: string[] = [];
+      if (result.added.length > 0) {
+        lines.push(`Found ${result.added.length} new project(s): ${result.added.join(", ")}`);
+      } else {
+        lines.push("No new projects found.");
+      }
+      lines.push(`Total registered: ${result.total}`);
+      ctx.reply(lines.join("\n"));
+      return;
+    }
+
+    ctx.reply("Unknown subcommand. Use: list, add, switch, remove, scan");
   });
 
   // /git command
