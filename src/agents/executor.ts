@@ -600,7 +600,7 @@ export class Executor {
       : buildPlannerSystemPrompt();
 
     // Restricted tools: read-only only
-    const planTools = "Read,Grep,Glob,WebFetch,WebSearch,Task";
+    const planTools = "Read,Grep,Glob,WebFetch,WebSearch,Task,Bash";
 
     // Shorter timeout for planning (half of execution timeout)
     const planTimeout = Math.min(

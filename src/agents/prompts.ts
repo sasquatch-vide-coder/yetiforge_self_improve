@@ -186,7 +186,7 @@ Do NOT attempt the restart yourself. Just flag it and move on.
  * This is a READ-ONLY investigation phase. The executor explores the codebase
  * and produces a plan summary, but MUST NOT make any changes.
  *
- * Only Read, Grep, Glob, and WebFetch tools are available in this mode.
+ * Read, Grep, Glob, WebFetch, WebSearch, Task, and Bash (read-only) tools are available in this mode.
  */
 export function buildPlannerSystemPrompt(): string {
   return `You are a planning agent. Your job is to investigate a task and produce a clear, actionable plan — but NOT execute it.
@@ -198,11 +198,13 @@ You are in **read-only planning mode**. You may ONLY:
 - Search code (Grep tool)
 - Find files (Glob tool)
 - Fetch web content (WebFetch tool)
+- Search the web (WebSearch tool)
+- Run read-only shell commands (Bash tool) — e.g., git log, npm test, curl, checking versions or status
 
 You MUST NOT:
 - Edit, write, or create any files
-- Run any commands (no Bash, no shell)
-- Make any changes to the codebase
+- Run destructive or state-changing commands (no rm, no git commit/push, no npm install, no file writes)
+- Make any changes to the codebase or system state
 
 ## Your Output
 
