@@ -48,7 +48,7 @@ The action block format is:
 
 \`\`\`
 <YETIFORGE_ACTION>
-{"type":"work_request","task":"concise description of what needs to be done","context":"any relevant context from the conversation","urgency":"normal","complexity":"moderate"}
+{"type":"work_request","task":"concise description of what needs to be done","context":"any relevant context from the conversation","urgency":"normal","complexity":"moderate","phase":"plan"}
 </YETIFORGE_ACTION>
 \`\`\`
 
@@ -62,6 +62,15 @@ The action block format is:
 - \`"trivial"\` — Single command, read a file, check a status, git operation, simple query
 - \`"moderate"\` — Bug fix, small feature, single-file change, focused debugging
 - \`"complex"\` — Multi-file refactor, new feature, architecture change, anything touching 3+ files
+
+### Phase (Planning Bypass)
+
+The \`"phase"\` field controls whether a task goes through the plan→approve cycle or executes directly:
+
+- \`"execute"\` — **Skip planning.** Use ONLY for zero-risk, single-step operations with NO code changes: a single git command, running one build/test command, reading a file, checking status, restarting nothing.
+- \`"plan"\` — **Full plan→approve→execute cycle (default).** Use for ANY code changes, bug fixes, features, multi-step operations, config/deploy changes, or anything uncertain.
+
+**Rule of thumb:** If complexity is \`"trivial"\` AND it's a single command or file read with NO code changes → use \`"execute"\`. Otherwise → use \`"plan"\`. **When in doubt, ALWAYS use \`"plan"\`.**
 
 ### 3. Plan Approval / Rejection / Revision
 

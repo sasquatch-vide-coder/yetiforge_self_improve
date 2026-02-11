@@ -225,6 +225,7 @@ async function handleWorkRequest(
         complexity: workRequest.complexity || "moderate",
         projectDir,
         memoryContext,
+        phase: workRequest.phase,
       });
 
       if (queued) {
@@ -238,6 +239,30 @@ async function handleWorkRequest(
     } else {
       await ctx.reply("Still working on a previous task. Use /cancel to abort it.").catch(() => {});
     }
+    return;
+  }
+
+  // Check if chat agent marked this as direct-execute (skip planning)
+  if (workRequest.phase === "execute") {
+    logger.info({ chatId, task: workRequest.task, complexity: workRequest.complexity }, "Work request detected, SKIPPING plan (phase=execute)");
+
+    chatLocks.setExecutorBusy(chatId);
+    executeInBackground(
+      chatId,
+      rawMessage,
+      workRequest,
+      projectDir,
+      ctx,
+      executor,
+      chatAgent,
+      invocationLogger,
+      chatLocks,
+      memoryContext,
+    ).catch((err) => {
+      logger.error({ chatId, err }, "Direct execution failed");
+      ctx.reply(`Execution failed: ${err.message}`).catch(() => {});
+      chatLocks.setExecutorIdle(chatId);
+    });
     return;
   }
 
@@ -791,23 +816,44 @@ async function processNextQueuedTask(chatId: number, chatLocks: ChatLocks): Prom
     context: nextTask.context,
     complexity,
     urgency: "normal",
+    phase: nextTask.phase,
   };
 
-  // Queued tasks go through the plan phase
-  planInBackground(
-    chatId,
-    nextTask.rawMessage,
-    workRequest,
-    nextTask.projectDir,
-    fakeCtx,
-    _executor,
-    _chatAgent,
-    _invocationLogger,
-    chatLocks,
-    nextTask.memoryContext,
-  ).catch((err) => {
-    logger.error({ chatId, err }, "Queued task plan phase failed");
-    _bot?.api.sendMessage(chatId, `Queued task planning failed: ${err.message}`).catch(() => {});
-    chatLocks.setExecutorIdle(chatId);
-  });
+  if (nextTask.phase === "execute") {
+    // Direct execution — skip planning
+    executeInBackground(
+      chatId,
+      nextTask.rawMessage,
+      workRequest,
+      nextTask.projectDir,
+      fakeCtx,
+      _executor,
+      _chatAgent,
+      _invocationLogger,
+      chatLocks,
+      nextTask.memoryContext,
+    ).catch((err) => {
+      logger.error({ chatId, err }, "Queued task direct execution failed");
+      _bot?.api.sendMessage(chatId, `Queued task execution failed: ${err.message}`).catch(() => {});
+      chatLocks.setExecutorIdle(chatId);
+    });
+  } else {
+    // Queued tasks go through the plan phase
+    planInBackground(
+      chatId,
+      nextTask.rawMessage,
+      workRequest,
+      nextTask.projectDir,
+      fakeCtx,
+      _executor,
+      _chatAgent,
+      _invocationLogger,
+      chatLocks,
+      nextTask.memoryContext,
+    ).catch((err) => {
+      logger.error({ chatId, err }, "Queued task plan phase failed");
+      _bot?.api.sendMessage(chatId, `Queued task planning failed: ${err.message}`).catch(() => {});
+      chatLocks.setExecutorIdle(chatId);
+    });
+  }
 }

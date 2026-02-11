@@ -13,6 +13,7 @@ export interface QueuedTask {
   complexity: string;
   projectDir: string;
   memoryContext?: string;
+  phase?: "plan" | "execute";
   queuedAt: number;
 }
 
@@ -65,6 +66,7 @@ export class TaskQueue {
     complexity: string;
     projectDir: string;
     memoryContext?: string;
+    phase?: "plan" | "execute";
   }): QueuedTask | null {
     const chatQueue = this.queues.get(opts.chatId) || [];
 
@@ -81,6 +83,7 @@ export class TaskQueue {
       complexity: opts.complexity,
       projectDir: opts.projectDir,
       memoryContext: opts.memoryContext,
+      phase: opts.phase,
       queuedAt: Date.now(),
     };
 

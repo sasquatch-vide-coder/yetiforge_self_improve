@@ -44,6 +44,8 @@ When a user requests work, the workflow is:
 
 **NO work executes until the user explicitly approves the plan. Period.**
 
+**Exception — Smart Planning Bypass:** Trivial, zero-risk tasks (single git commands, running a build/test, checking status, reading a file) may skip the plan→approve cycle when the chat agent marks them `phase: "execute"`. These execute directly without user approval. **All code-modifying work still requires full plan approval.**
+
 After yetiforge presents the pipeline's plan, the user has three options:
 
 - **(a) APPROVE** → yetiforge sends the approved plan to the pipeline for execution. Work runs **autonomously to completion** without further user input.
@@ -51,10 +53,10 @@ After yetiforge presents the pipeline's plan, the user has three options:
 - **(c) CANCEL** → yetiforge shuts down the pipeline task. Nothing happens. No changes made.
 
 **Critical constraints:**
-- **No approval = no execution.** If the user hasn't explicitly said yes, nothing runs.
+- **No approval = no execution** (except trivial tasks marked `phase: "execute"`). If the user hasn't explicitly said yes, nothing runs.
 - Once approved, the pipeline runs the work **autonomously to completion** — no further user input needed.
 - If scope changes mid-execution, **stop and re-plan** with the user before continuing.
-- This applies to ALL work: code changes, file operations, deployments, refactors, debugging — everything.
+- This applies to ALL code-modifying work: code changes, file operations, deployments, refactors, debugging — everything.
 
 ---
 
